@@ -1,0 +1,80 @@
+export type Currency = "PEN" | "USD";
+export type RenewalKind = "hosting" | "domain" | "support" | "other";
+export type TransactionKind = "income" | "expense";
+export type EventKind = "task" | "deadline" | "meeting";
+
+export interface Client {
+  id: string;
+  owner_id: string;
+  company_name: string;
+  legal_name: string | null;
+  tax_id: string | null;
+  contact_name: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface Renewal {
+  id: string;
+  owner_id: string;
+  client_id: string;
+  kind: RenewalKind;
+  label: string;
+  due_date: string;
+  provider_cost: number;
+  client_price: number;
+  currency: Currency;
+  billing_months: number;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface Credential {
+  id: string;
+  owner_id: string;
+  client_id: string;
+  service: string;
+  login_email: string | null;
+  username: string | null;
+  login_url: string | null;
+  encrypted_password: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface Transaction {
+  id: string;
+  owner_id: string;
+  client_id: string | null;
+  kind: TransactionKind;
+  category: string;
+  description: string;
+  amount: number;
+  currency: Currency;
+  occurred_on: string;
+  created_at: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  owner_id: string;
+  client_id: string | null;
+  kind: EventKind;
+  title: string;
+  event_date: string;
+  remind_days: number;
+  notes: string | null;
+  completed: boolean;
+  created_at: string;
+}
+
+export type Data = {
+  clients: Client[];
+  renewals: Renewal[];
+  credentials: Credential[];
+  transactions: Transaction[];
+  events: CalendarEvent[];
+};

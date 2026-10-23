@@ -13,6 +13,7 @@ export interface Client {
   phone: string | null;
   email: string | null;
   website: string | null;
+  industry: string | null;
   notes: string | null;
   created_at: string;
 }
@@ -24,10 +25,24 @@ export interface Renewal {
   kind: RenewalKind;
   label: string;
   due_date: string;
-  provider_cost: number;
+  first_purchased_on: string | null;
+  provider_cost: number | null;
   client_price: number;
   currency: Currency;
   billing_months: number;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface RenewalPayment {
+  id: string;
+  owner_id: string;
+  renewal_id: string;
+  paid_on: string;
+  renewal_due_on: string | null;
+  provider_cost: number;
+  client_price: number | null;
+  currency: Currency;
   notes: string | null;
   created_at: string;
 }
@@ -74,6 +89,7 @@ export interface CalendarEvent {
 export type Data = {
   clients: Client[];
   renewals: Renewal[];
+  renewalPayments: RenewalPayment[];
   credentials: Credential[];
   transactions: Transaction[];
   events: CalendarEvent[];

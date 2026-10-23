@@ -13,6 +13,7 @@ create table if not exists public.clients (
   phone text,
   email text,
   website text,
+  industry text,
   notes text,
   created_at timestamptz not null default now(),
   unique (id, owner_id)
@@ -25,13 +26,30 @@ create table if not exists public.renewals (
   kind text not null check (kind in ('hosting', 'domain', 'support', 'other')),
   label text not null default '',
   due_date date not null,
-  provider_cost numeric(12,2) not null default 0 check (provider_cost >= 0),
+  first_purchased_on date,
+  provider_cost numeric(12,2) check (provider_cost >= 0),
   client_price numeric(12,2) not null default 0 check (client_price >= 0),
   currency text not null default 'PEN' check (currency in ('PEN', 'USD')),
   billing_months integer not null default 12 check (billing_months between 1 and 120),
   notes text,
   created_at timestamptz not null default now(),
-  foreign key (client_id, owner_id) references public.clients(id, owner_id) on delete cascade
+  foreign key (client_id, owner_id) references public.clients(id, owner_id) on delete cascade,
+  unique (id, owner_id)
+);
+
+create table if not exists public.renewal_payments (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  renewal_id uuid not null,
+  paid_on date not null,
+  renewal_due_on date,
+  provider_cost numeric(12,2) not null check (provider_cost >= 0),
+  client_price numeric(12,2) check (client_price >= 0),
+  currency text not null default 'PEN' check (currency in ('PEN', 'USD')),
+  notes text,
+  created_at timestamptz not null default now(),
+  foreign key (renewal_id, owner_id) references public.renewals(id, owner_id) on delete cascade,
+  unique (renewal_id, renewal_due_on)
 );
 
 create table if not exists public.credentials (
@@ -88,12 +106,14 @@ create table if not exists public.user_profiles (
 );
 
 create index if not exists renewals_owner_due on public.renewals(owner_id, due_date);
+create index if not exists renewal_payments_owner_date on public.renewal_payments(owner_id, paid_on desc);
 create index if not exists transactions_owner_date on public.transactions(owner_id, occurred_on);
 create index if not exists events_owner_date on public.calendar_events(owner_id, event_date);
 create index if not exists credentials_owner_client on public.credentials(owner_id, client_id);
 
 alter table public.clients enable row level security;
 alter table public.renewals enable row level security;
+alter table public.renewal_payments enable row level security;
 alter table public.credentials enable row level security;
 alter table public.transactions enable row level security;
 alter table public.calendar_events enable row level security;
@@ -106,6 +126,10 @@ create policy owner_clients on public.clients for all to authenticated
 drop policy if exists owner_renewals on public.renewals;
 create policy owner_renewals on public.renewals for all to authenticated
   using (owner_id = (select auth.uid())) with check (owner_id = (select auth.uid()));
+drop policy if exists owner_renewal_payments on public.renewal_payments;
+create policy owner_renewal_payments on public.renewal_payments for all to authenticated
+  using (owner_id = (select auth.uid())) with check (owner_id = (select auth.uid()));
+grant select, insert, update, delete on public.renewal_payments to authenticated;
 drop policy if exists owner_credentials on public.credentials;
 create policy owner_credentials on public.credentials for all to authenticated
   using (owner_id = (select auth.uid())) with check (owner_id = (select auth.uid()));
@@ -153,3 +177,59 @@ $$;
 
 revoke all on function public.mark_renewal_paid(uuid) from public;
 grant execute on function public.mark_renewal_paid(uuid) to authenticated;
+
+create or replace function public.record_renewal_payment(
+  p_renewal_id uuid,
+  p_expected_due_on date,
+  p_paid_on date,
+  p_provider_cost numeric,
+  p_client_price numeric default null,
+  p_next_provider_cost numeric default null,
+  p_notes text default null
+)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  item public.renewals%rowtype;
+  company text;
+begin
+  if p_paid_on is null or p_provider_cost is null or p_provider_cost < 0
+     or (p_client_price is not null and p_client_price < 0)
+     or (p_next_provider_cost is not null and p_next_provider_cost < 0) then
+    raise exception 'Revisa la fecha y los importes del pago';
+  end if;
+  select * into item from public.renewals
+  where id = p_renewal_id and owner_id = auth.uid()
+  for update;
+  if not found then raise exception 'Servicio no encontrado'; end if;
+  if item.due_date <> p_expected_due_on then
+    raise exception 'El vencimiento cambió. Actualiza la página e inténtalo de nuevo';
+  end if;
+
+  insert into public.renewal_payments
+    (owner_id, renewal_id, paid_on, renewal_due_on, provider_cost, client_price, currency, notes)
+  values
+    (item.owner_id, item.id, p_paid_on, item.due_date, p_provider_cost,
+     p_client_price, item.currency, p_notes);
+
+  if p_provider_cost > 0 then
+    select company_name into company from public.clients where id = item.client_id;
+    insert into public.transactions
+      (owner_id, client_id, kind, category, description, amount, currency, occurred_on)
+    values
+      (item.owner_id, item.client_id, 'expense', 'Hosting y dominios',
+       'Pago de ' || item.label || ' · ' || company, p_provider_cost, item.currency, p_paid_on);
+  end if;
+
+  update public.renewals
+  set due_date = (item.due_date + make_interval(months => item.billing_months))::date,
+      provider_cost = p_next_provider_cost
+  where id = item.id and owner_id = auth.uid();
+end;
+$$;
+
+revoke all on function public.record_renewal_payment(uuid, date, date, numeric, numeric, numeric, text) from public;
+grant execute on function public.record_renewal_payment(uuid, date, date, numeric, numeric, numeric, text) to authenticated;

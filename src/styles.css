@@ -954,6 +954,42 @@ nav {
   color: #c4c9cc;
   margin-top: 3px;
 }
+.service-card {
+  border: 1px solid #34373d;
+  border-radius: 9px;
+  padding: 9px 12px 12px;
+  margin: 9px 0;
+}
+.service-dates {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 12px 39px;
+  font-size: 10px;
+  color: #c4c9cc;
+}
+.service-dates strong { color: #f5f5f5; }
+.service-paid-button { margin: 0 0 11px 39px; }
+.service-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid #34373d;
+  padding-top: 10px;
+  font-size: 10px;
+}
+.service-payment {
+  display: grid;
+  gap: 3px;
+  padding: 9px 0;
+  border-bottom: 1px solid #34373d;
+  font-size: 10px;
+  color: #c4c9cc;
+}
+.service-payment:last-child { border-bottom: 0; }
+.service-payment span:first-child { color: #ff9b45; font-weight: 700; }
+.service-payment small { color: #a6adb2; }
 .muted-small {
   font-size: 11px;
   color: #c4c9cc;

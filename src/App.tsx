@@ -60,6 +60,7 @@ import type {
   EventKind,
   Renewal,
   RenewalKind,
+  RenewalPayment,
   Transaction,
 } from "./lib/types";
 
@@ -67,14 +68,16 @@ type View = "overview" | "clients" | "payments" | "finances" | "calendar";
 const LOGIN_ALIAS = "datnya.monzon";
 const LOGIN_EMAIL = "datnyamonzon1@gmail.com";
 type Editor = {
-  kind: "client" | "renewal" | "credential" | "transaction" | "event" | "vault";
+  kind: "client" | "renewal" | "credential" | "transaction" | "event" | "vault" | "paid" | "pastPayment";
   item?: Client | Renewal | Credential | Transaction | CalendarEvent;
   clientId?: string;
+  renewalId?: string;
 } | null;
 
 const emptyData: Data = {
   clients: [],
   renewals: [],
+  renewalPayments: [],
   credentials: [],
   transactions: [],
   events: [],
@@ -103,6 +106,7 @@ const demoData: Data = {
       phone: "+51 999 000 000",
       email: "contacto@ejemplo.com",
       website: "https://example.com",
+      industry: "Diseño y creatividad",
       notes: "Datos de ejemplo para explorar la interfaz.",
       created_at: today(),
     },
@@ -116,6 +120,7 @@ const demoData: Data = {
       phone: "+51 988 000 000",
       email: "hola@ejemplo.org",
       website: "https://example.org",
+      industry: "Tecnología",
       notes: null,
       created_at: today(),
     },
@@ -128,6 +133,7 @@ const demoData: Data = {
       kind: "hosting",
       label: "Hosting principal",
       due_date: offsetDate(18),
+      first_purchased_on: offsetDate(-347),
       provider_cost: 280,
       client_price: 450,
       currency: "PEN",
@@ -142,6 +148,7 @@ const demoData: Data = {
       kind: "domain",
       label: "Dominio .com",
       due_date: offsetDate(47),
+      first_purchased_on: offsetDate(-318),
       provider_cost: 65,
       client_price: 100,
       currency: "PEN",
@@ -156,11 +163,26 @@ const demoData: Data = {
       kind: "support",
       label: "Soporte anual",
       due_date: offsetDate(94),
+      first_purchased_on: null,
       provider_cost: 0,
       client_price: 600,
       currency: "PEN",
       billing_months: 12,
       notes: null,
+      created_at: today(),
+    },
+  ],
+  renewalPayments: [
+    {
+      id: "payment-demo-1",
+      owner_id: demoOwner,
+      renewal_id: "r1",
+      paid_on: offsetDate(-347),
+      renewal_due_on: offsetDate(-347),
+      provider_cost: 120,
+      client_price: 450,
+      currency: "PEN",
+      notes: "Precio promocional del primer año.",
       created_at: today(),
     },
   ],
@@ -250,7 +272,9 @@ const fromForm = (form: HTMLFormElement, name: string) =>
 const rawFromForm = (form: HTMLFormElement, name: string) =>
   String(new FormData(form).get(name) ?? "");
 const optional = (value: string) => value || null;
-const isUrl = (value: string) => !value || /^https?:\/\//i.test(value);
+const isUrl = (value: string) => !value || /^(https?:\/\/|www\.)/i.test(value);
+const hrefFor = (value: string) => /^www\./i.test(value) ? `https://${value}` : value;
+const industries = ["Tecnología", "Comercio", "Gastronomía", "Salud", "Educación", "Construcción", "Inmobiliaria", "Turismo", "Servicios profesionales", "Finanzas", "Transporte y logística", "Manufactura", "Agricultura", "Belleza y bienestar", "Diseño y creatividad", "Entretenimiento", "Organización sin fines de lucro"];
 const getClient = (data: Data, id: string | null) =>
   data.clients.find((client) => client.id === id);
 const statusOf = (date: string, remindDays = 30) => {
@@ -366,10 +390,11 @@ export default function App() {
 
   async function loadData() {
     if (!supabase || !session) return;
-    const [clients, renewals, credentials, transactions, events, vault, profile] =
+    const [clients, renewals, renewalPayments, credentials, transactions, events, vault, profile] =
       await Promise.all([
         supabase.from("clients").select("*").order("company_name"),
         supabase.from("renewals").select("*").order("due_date"),
+        supabase.from("renewal_payments").select("*").order("paid_on", { ascending: false }),
         supabase.from("credentials").select("*").order("service"),
         supabase
           .from("transactions")
@@ -382,6 +407,7 @@ export default function App() {
     const error = [
       clients,
       renewals,
+      renewalPayments,
       credentials,
       transactions,
       events,
@@ -395,6 +421,7 @@ export default function App() {
     setData({
       clients: clients.data as Client[],
       renewals: renewals.data as Renewal[],
+      renewalPayments: renewalPayments.data as RenewalPayment[],
       credentials: credentials.data as Credential[],
       transactions: transactions.data as Transaction[],
       events: events.data as CalendarEvent[],
@@ -554,7 +581,7 @@ export default function App() {
       .reduce((sum, r) => sum + Number(r.client_price) / r.billing_months, 0);
   const marginYear = (currency: Currency) =>
     data.renewals
-      .filter((r) => r.currency === currency)
+      .filter((r) => r.currency === currency && r.provider_cost !== null)
       .reduce(
         (sum, r) =>
           sum +
@@ -562,6 +589,8 @@ export default function App() {
             r.billing_months,
         0,
       );
+  const unknownCosts = (currency: Currency) =>
+    data.renewals.filter((r) => r.currency === currency && r.provider_cost === null).length;
   const hasUsd = data.renewals.some((r) => r.currency === "USD");
   const selectedClient = getClient(data, selectedClientId);
   const selectedRenewals = data.renewals.filter(
@@ -638,7 +667,8 @@ export default function App() {
       | "renewals"
       | "credentials"
       | "transactions"
-      | "calendar_events",
+      | "calendar_events"
+      | "renewal_payments",
     values: Record<string, unknown>,
     id?: string,
   ) {
@@ -691,28 +721,8 @@ export default function App() {
     return true;
   }
 
-  async function markPaid(renewal: Renewal) {
-    if (!supabase || !session) {
-      setToast("Vista previa: conecta Supabase para registrar pagos.");
-      return;
-    }
-    if (
-      !window.confirm(
-        `¿Ya pagaste ${renewal.label}? Se registrará el costo como egreso y se moverá el vencimiento ${renewal.billing_months} meses.`,
-      )
-    )
-      return;
-    setBusy(true);
-    const { error } = await supabase.rpc("mark_renewal_paid", {
-      p_renewal_id: renewal.id,
-    });
-    setBusy(false);
-    if (error) {
-      setToast(`No se pudo registrar: ${error.message}`);
-      return;
-    }
-    await loadData();
-    setToast("Pago registrado; vencimiento actualizado");
+  function markPaid(renewal: Renewal) {
+    setEditor({ kind: "paid", item: renewal });
   }
 
   async function unlockVault(event: FormEvent<HTMLFormElement>) {
@@ -798,7 +808,13 @@ export default function App() {
     if (editor.kind === "client") {
       const website = fromForm(form, "website");
       if (!isUrl(website)) {
-        setToast("El sitio web debe comenzar con https://");
+        setToast("El sitio web debe comenzar con www., https:// o http://");
+        return;
+      }
+      const industry = fromForm(form, "industry");
+      const customIndustry = fromForm(form, "industry_other");
+      if (industry === "other" && !customIndustry) {
+        setToast("Escribe el rubro de la empresa.");
         return;
       }
       await save(
@@ -811,6 +827,7 @@ export default function App() {
           phone: optional(fromForm(form, "phone")),
           email: optional(fromForm(form, "email")),
           website: optional(website),
+          industry: optional(industry === "other" ? customIndustry : industry),
           notes: optional(fromForm(form, "notes")),
         },
         id,
@@ -823,7 +840,8 @@ export default function App() {
           kind: fromForm(form, "kind"),
           label: fromForm(form, "label"),
           due_date: fromForm(form, "due_date"),
-          provider_cost: Number(fromForm(form, "provider_cost")),
+          first_purchased_on: optional(fromForm(form, "first_purchased_on")),
+          provider_cost: fromForm(form, "provider_cost") ? Number(fromForm(form, "provider_cost")) : null,
           client_price: Number(fromForm(form, "client_price")),
           currency: fromForm(form, "currency"),
           billing_months: Number(fromForm(form, "billing_months")),
@@ -831,6 +849,42 @@ export default function App() {
         },
         id,
       );
+    } else if (editor.kind === "paid") {
+      if (!supabase || !session) {
+        setToast("Conecta Supabase para registrar pagos.");
+        return;
+      }
+      const renewal = editor.item as Renewal;
+      setBusy(true);
+      const { error } = await supabase.rpc("record_renewal_payment", {
+        p_renewal_id: renewal.id,
+        p_expected_due_on: renewal.due_date,
+        p_paid_on: fromForm(form, "paid_on"),
+        p_provider_cost: Number(fromForm(form, "provider_cost")),
+        p_client_price: fromForm(form, "client_price") ? Number(fromForm(form, "client_price")) : null,
+        p_next_provider_cost: fromForm(form, "next_provider_cost") ? Number(fromForm(form, "next_provider_cost")) : null,
+        p_notes: optional(fromForm(form, "notes")),
+      });
+      setBusy(false);
+      if (error) {
+        setToast(`No se pudo registrar el pago: ${error.message}`);
+        return;
+      }
+      await loadData();
+      setEditor(null);
+      setToast("Pago guardado en el historial y próximo vencimiento actualizado.");
+    } else if (editor.kind === "pastPayment") {
+      const renewal = data.renewals.find((r) => r.id === editor.renewalId);
+      if (!renewal) return;
+      await save("renewal_payments", {
+        renewal_id: renewal.id,
+        paid_on: fromForm(form, "paid_on"),
+        renewal_due_on: null,
+        provider_cost: Number(fromForm(form, "provider_cost")),
+        client_price: fromForm(form, "client_price") ? Number(fromForm(form, "client_price")) : null,
+        currency: renewal.currency,
+        notes: optional(fromForm(form, "notes")),
+      });
     } else if (editor.kind === "credential") {
       const loginUrl = fromForm(form, "login_url");
       if (!isUrl(loginUrl)) {
@@ -896,7 +950,7 @@ export default function App() {
   }
 
   async function deleteEditorItem() {
-    if (!editor || editor.kind === "vault" || !editor.item?.id) return;
+    if (!editor || editor.kind === "vault" || editor.kind === "paid" || editor.kind === "pastPayment" || !editor.item?.id) return;
     const tables = {
       client: "clients",
       renewal: "renewals",
@@ -1258,10 +1312,10 @@ export default function App() {
                       <Wallet size={20} />
                     </div>
                   </div>
-                  <strong>{money(marginYear("PEN"))}</strong>
+                  <strong>{unknownCosts("PEN") ? "Por completar" : money(marginYear("PEN"))}</strong>
                   <small>
-                    Precio al cliente menos costo
-                    {hasUsd ? ` · + ${money(marginYear("USD"), "USD")}` : ""}
+                    {unknownCosts("PEN") ? `${unknownCosts("PEN")} costo(s) sin estimar` : "Precio al cliente menos costo"}
+                    {hasUsd ? ` · USD: ${unknownCosts("USD") ? "por completar" : money(marginYear("USD"), "USD")}` : ""}
                   </small>
                 </div>
               </div>
@@ -1506,11 +1560,12 @@ export default function App() {
                           }
                         />
                         <Info label="RUC" value={selectedClient.tax_id} onCopy={copyText} />
+                        <Info label="Rubro" value={selectedClient.industry} onCopy={copyText} />
                         <Info
                           label="Página web"
                           value={selectedClient.website}
                           onCopy={copyText}
-                          link={selectedClient.website ?? undefined}
+                          link={selectedClient.website ? hrefFor(selectedClient.website) : undefined}
                         />
                       </div>
                       {selectedClient.notes && (
@@ -1544,6 +1599,7 @@ export default function App() {
                                     renewal.billing_months,
                                 0,
                               );
+                              const missingCost = services.some((renewal) => renewal.provider_cost === null);
                               return (
                                 <div
                                   className="client-finance-row"
@@ -1558,7 +1614,7 @@ export default function App() {
                                   <div>
                                     <span>Ganancia anual estimada</span>
                                     <strong>
-                                      {money(annualMargin, currency)}
+                                      {missingCost ? "Por completar" : money(annualMargin, currency)}
                                     </strong>
                                   </div>
                                 </div>
@@ -1589,32 +1645,34 @@ export default function App() {
                             .sort((a, b) =>
                               a.due_date.localeCompare(b.due_date),
                             )
-                            .map((renewal) => (
-                              <div className="detail-item" key={renewal.id}>
-                                <div className="service-icon">
-                                  <Globe2 size={17} />
+                            .map((renewal) => {
+                              const history = data.renewalPayments.filter((payment) => payment.renewal_id === renewal.id);
+                              return <div className="service-card" key={renewal.id}>
+                                <div className="detail-item">
+                                  <div className="service-icon"><Globe2 size={17} /></div>
+                                  <div>
+                                    <strong>{renewal.label}</strong>
+                                    <span>{kindLabel[renewal.kind]}</span>
+                                  </div>
+                                  <button className="icon-button" title="Editar servicio" onClick={() => setEditor({ kind: "renewal", item: renewal })}><Pencil size={16} /></button>
                                 </div>
-                                <div>
-                                  <strong>{renewal.label}</strong>
-                                  <span>
-                                    {kindLabel[renewal.kind]} ·{" "}
-                                    {prettyDate(renewal.due_date)}
-                                  </span>
+                                <div className="service-dates">
+                                  <span>Primera compra: <strong>{renewal.first_purchased_on ? prettyDate(renewal.first_purchased_on) : "Sin registrar"}</strong></span>
+                                  <span>Próximo vencimiento: <strong>{prettyDate(renewal.due_date)}</strong></span>
                                 </div>
-                                <button
-                                  className="icon-button"
-                                  title="Editar"
-                                  onClick={() =>
-                                    setEditor({
-                                      kind: "renewal",
-                                      item: renewal,
-                                    })
-                                  }
-                                >
-                                  <Pencil size={16} />
-                                </button>
-                              </div>
-                            ))
+                                <button className="button subtle small service-paid-button" onClick={() => markPaid(renewal)}><Check size={14} /> Registrar pago actual</button>
+                                <div className="service-history-head">
+                                  <strong>Historial de pagos ({history.length})</strong>
+                                  <button className="small-add" onClick={() => setEditor({ kind: "pastPayment", renewalId: renewal.id })}><Plus size={14} /> Agregar pago anterior</button>
+                                </div>
+                                {history.length ? history.map((payment) => <div className="service-payment" key={payment.id}>
+                                  <span>{prettyDate(payment.paid_on)}</span>
+                                  <span>Pagado al proveedor: {money(Number(payment.provider_cost), payment.currency)}</span>
+                                  <span>Cobrado al cliente: {payment.client_price === null ? "Sin registrar" : money(Number(payment.client_price), payment.currency)}</span>
+                                  {payment.notes && <small>{payment.notes}</small>}
+                                </div>) : <p className="muted-small">Aún no hay pagos en el historial. Puedes agregar los años anteriores sin alterar el próximo vencimiento.</p>}
+                              </div>;
+                            })
                         ) : (
                           <p className="muted-small">
                             Aún no hay servicios registrados.
@@ -1885,11 +1943,8 @@ export default function App() {
                                   </span>
                                 </strong>
                                 <small>
-                                  {kindLabel[renewal.kind]} · Costo{" "}
-                                  {money(
-                                    Number(renewal.provider_cost),
-                                    renewal.currency,
-                                  )}{" "}
+                                  {kindLabel[renewal.kind]} · Próximo costo estimado{" "}
+                                  {renewal.provider_cost === null ? "Por definir" : money(Number(renewal.provider_cost), renewal.currency)}{" "}
                                   · Cobro{" "}
                                   {money(
                                     Number(renewal.client_price),
@@ -1931,7 +1986,7 @@ export default function App() {
                                 <button
                                   className="button subtle small"
                                   disabled={busy}
-                                  onClick={() => void markPaid(renewal)}
+                                  onClick={() => markPaid(renewal)}
                                 >
                                   <Check size={15} /> Pagado
                                 </button>
@@ -2374,7 +2429,7 @@ export default function App() {
             <div className="modal-header">
               <div>
                 <span className="eyebrow">
-                  {editor.item?.id ? "EDITAR REGISTRO" : "NUEVO REGISTRO"}
+                  {editor.item?.id && editor.kind !== "paid" ? "EDITAR REGISTRO" : "NUEVO REGISTRO"}
                 </span>
                 <h2>
                   {editor.kind === "vault"
@@ -2387,6 +2442,8 @@ export default function App() {
                         credential: "Acceso",
                         transaction: "Movimiento",
                         event: "Evento",
+                        paid: "Registrar pago",
+                        pastPayment: "Pago anterior",
                       }[editor.kind]}
                 </h2>
               </div>
@@ -2438,6 +2495,8 @@ export default function App() {
                     clientId={editor.clientId}
                   />
                 )}
+                {editor.kind === "paid" && <PaymentFields renewal={editor.item as Renewal} historical={false} />}
+                {editor.kind === "pastPayment" && <PaymentFields renewal={data.renewals.find((r) => r.id === editor.renewalId)!} historical />}
                 {editor.kind === "credential" && (
                   <CredentialFields
                     item={editor.item as Credential | undefined}
@@ -2460,7 +2519,7 @@ export default function App() {
                   />
                 )}
                 <div className="modal-actions">
-                  {editor.item?.id && (
+                  {editor.item?.id && editor.kind !== "paid" && (
                     <button
                       type="button"
                       className="delete-link modal-delete"
@@ -2648,6 +2707,9 @@ function Notes({ value }: { value?: string | null }) {
   );
 }
 function ClientFields({ item }: { item?: Client }) {
+  const [industryChoice, setIndustryChoice] = useState(
+    item?.industry && !industries.includes(item.industry) ? "other" : (item?.industry ?? ""),
+  );
   return (
     <>
       <div className="form-grid">
@@ -2664,6 +2726,15 @@ function ClientFields({ item }: { item?: Client }) {
           defaultValue={item?.legal_name}
         />
         <Field label="RUC" name="tax_id" defaultValue={item?.tax_id} />
+        <label className="field">
+          <span>Rubro de la empresa</span>
+          <select name="industry" value={industryChoice} onChange={(event) => setIndustryChoice(event.target.value)}>
+            <option value="">Selecciona un rubro</option>
+            {industries.map((industry) => <option key={industry} value={industry}>{industry}</option>)}
+            <option value="other">Otros</option>
+          </select>
+        </label>
+        {industryChoice === "other" && <Field label="Especifica el rubro" name="industry_other" defaultValue={item?.industry} required />}
         <Field
           label="Nombre completo del contacto"
           name="contact_name"
@@ -2685,7 +2756,7 @@ function ClientFields({ item }: { item?: Client }) {
           label="Página web"
           name="website"
           defaultValue={item?.website}
-          placeholder="https://…"
+          placeholder="www.ejemplo.com o https://ejemplo.com"
         />
       </div>
       <Notes value={item?.notes} />
@@ -2733,13 +2804,18 @@ function RenewalFields({
           required
         />
         <Field
-          label="Costo que pagas"
+          label="Primera compra del servicio"
+          name="first_purchased_on"
+          type="date"
+          defaultValue={item?.first_purchased_on}
+        />
+        <Field
+          label="Costo estimado del próximo periodo"
           name="provider_cost"
           type="number"
-          defaultValue={item?.provider_cost ?? 0}
+          defaultValue={item?.provider_cost}
           min={0}
           step="0.01"
-          required
         />
         <Field
           label="Precio que cobras"
@@ -2773,12 +2849,27 @@ function RenewalFields({
         />
       </div>
       <p className="form-hint">
-        El aviso aparecerá 30 días antes. El precio mensual estimado será el
-        precio cobrado dividido entre la frecuencia en meses.
+        El aviso aparecerá 30 días antes. El costo estimado puede quedar vacío si el proveedor aún no publica el precio de renovación. Cada pago real se guarda aparte en el historial. Si este servicio ya existía, revisa su costo: podría ser el precio promocional del primer año.
       </p>
       <Notes value={item?.notes} />
     </>
   );
+}
+function PaymentFields({ renewal, historical }: { renewal: Renewal; historical: boolean }) {
+  return <>
+    <p className="form-hint">
+      <strong>{renewal.label}</strong> · {kindLabel[renewal.kind]} · {renewal.currency}. {historical
+        ? "Agrega un pago realizado anteriormente. No cambiará el próximo vencimiento ni creará un movimiento financiero duplicado."
+        : `Vencimiento actual: ${prettyDate(renewal.due_date)}. Al guardar, se registrará el egreso real y se avanzará el vencimiento ${renewal.billing_months} meses.`}
+    </p>
+    <div className="form-grid">
+      <Field label="Fecha del pago" name="paid_on" type="date" defaultValue={today()} required />
+      <Field label="Pagado al proveedor (real)" name="provider_cost" type="number" min={0} step="0.01" required />
+      <Field label="Cobrado al cliente (si ya cobraste)" name="client_price" type="number" min={0} step="0.01" />
+      {!historical && <Field label="Costo estimado para la próxima renovación" name="next_provider_cost" type="number" min={0} step="0.01" />}
+    </div>
+    <Notes />
+  </>;
 }
 function CredentialFields({
   item,

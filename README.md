@@ -7,9 +7,10 @@ Plataforma privada para gestionar clientes, accesos, renovaciones, ingresos, egr
 - **Clientes:** empresa, rubro seleccionable o personalizado, razón social, RUC, contacto, teléfono, correo, sitio web (`www.` o `https://`) y notas.
 - **Accesos:** cPanel, Namecheap, Gmail y cualquier otro servicio, con enlace, correo, usuario y contraseña cifrada.
 - **Copiar:** botones junto a los datos del cliente y cada campo de acceso. La contraseña se copia solo con la caja fuerte desbloqueada.
-- **Vencimientos:** hosting, dominio, soporte u otros; primera compra, próximo vencimiento, costo estimado del siguiente periodo, precio al cliente, moneda y periodicidad. Muestra avisos 30 días antes y ordena los pagos por fecha. Al registrar un pago pide el costo real, lo agrega al historial, lo registra como egreso y mueve el vencimiento. La estimación del siguiente año queda vacía salvo que la indiques.
-- **Historial:** cada servicio muestra sus pagos por fecha y permite registrar pagos de años anteriores sin mover el vencimiento ni duplicar movimientos de finanzas. Los datos anteriores a esta versión no se inventan ni se modifican: puedes completar su primera compra e historial manualmente.
-- **Resumen:** ingreso mensual **estimado** como precio periódico dividido entre los meses del período; ganancia anual estimada como precios menos costos. Estos números son proyecciones, separados de los movimientos reales.
+- **Vencimientos:** cada servicio conserva su primera compra, próximo vencimiento, observaciones, moneda del proveedor y costo estimado. Muestra avisos 30 días antes y ordena los pagos por fecha. Al registrar un pago pide el costo real, conserva la estimación de ese año en el historial, lo registra como egreso y mueve el vencimiento.
+- **Balance anual del cliente:** registra por año el total aproximado indicado al cliente y el total realmente cobrado por el paquete de hosting, dominio y soporte. La ficha compara cada total con los costos de sus proveedores y calcula la diferencia correspondiente al soporte solo cuando los pagos están completos y usan la misma moneda. USD y PEN se muestran separados; no se convierten automáticamente.
+- **Historial:** cada servicio muestra sus pagos por fecha y permite registrar pagos de años anteriores sin mover el vencimiento ni duplicar movimientos de finanzas. Los datos anteriores a esta versión no se inventan ni se modifican: puedes completar su primera compra, pagos anteriores y totales anuales manualmente.
+- **Resumen:** muestra solo cobros anuales registrados y pagos reales a proveedores del año, por moneda. Los importes no registrados no se estiman como si ya se hubieran cobrado.
 - **Finanzas:** ingresos y egresos reales por categoría, cliente y moneda. PEN y USD se muestran por separado; no se convierten con un tipo de cambio.
 - **Calendario:** vista mensual y anual, con vencimientos automáticos, eventos, entregas y tareas. Cada evento permite configurar cuántos días antes debe aparecer el aviso.
 - **Perfil:** sube, cambia o elimina tu foto desde el avatar del menú. La foto se reduce a 256 × 256 píxeles y se guarda en una tabla privada de Supabase.
@@ -36,7 +37,7 @@ Abre la dirección que indique Vite. En la configuración actual de Supabase, la
 
 1. Crea un proyecto en [Supabase](https://supabase.com/dashboard).
 2. En **SQL Editor**, ejecuta el archivo [`supabase/schema.sql`](supabase/schema.sql).
-   Si ya habías aplicado una versión anterior del esquema, ejecuta las migraciones que aún falten: [`supabase/profile_migration.sql`](supabase/profile_migration.sql) y [`supabase/renewal_history_migration.sql`](supabase/renewal_history_migration.sql). La segunda conserva los clientes, servicios y transacciones existentes.
+   Si ya habías aplicado una versión anterior del esquema, ejecuta en orden las migraciones que aún falten: [`supabase/profile_migration.sql`](supabase/profile_migration.sql), [`supabase/renewal_history_migration.sql`](supabase/renewal_history_migration.sql) y [`supabase/annual_billing_migration.sql`](supabase/annual_billing_migration.sql). Son aditivas y conservan los clientes, servicios y transacciones existentes.
 3. En **Authentication → URL Configuration**, configura la URL local de la aplicación. En **Authentication → Users**, envía una invitación a tu correo personal. El enlace abrirá la aplicación para que definas tu propia contraseña. Después, deshabilita el registro público en Supabase.
 4. Copia `.env.example` a `.env.local` y completa la URL y la **publishable key** de tu proyecto:
 
@@ -70,5 +71,6 @@ Si copias una contraseña en un dispositivo compartido, recuerda que el portapap
 
 ```bash
 npm run typecheck
+npm test
 npm run build
 ```

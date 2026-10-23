@@ -40,9 +40,24 @@ export interface RenewalPayment {
   renewal_id: string;
   paid_on: string;
   renewal_due_on: string | null;
+  billing_year: number | null;
   provider_cost: number;
+  quoted_provider_cost: number | null;
   client_price: number | null;
   currency: Currency;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface AnnualBilling {
+  id: string;
+  owner_id: string;
+  client_id: string;
+  billing_year: number;
+  currency: Currency;
+  quoted_total: number | null;
+  charged_total: number | null;
+  charged_on: string | null;
   notes: string | null;
   created_at: string;
 }
@@ -90,6 +105,7 @@ export type Data = {
   clients: Client[];
   renewals: Renewal[];
   renewalPayments: RenewalPayment[];
+  annualBilling: AnnualBilling[];
   credentials: Credential[];
   transactions: Transaction[];
   events: CalendarEvent[];

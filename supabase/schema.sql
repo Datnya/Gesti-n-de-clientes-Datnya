@@ -43,13 +43,31 @@ create table if not exists public.renewal_payments (
   renewal_id uuid not null,
   paid_on date not null,
   renewal_due_on date,
+  billing_year integer check (billing_year between 2000 and 2100),
   provider_cost numeric(12,2) not null check (provider_cost >= 0),
+  quoted_provider_cost numeric(12,2) check (quoted_provider_cost >= 0),
   client_price numeric(12,2) check (client_price >= 0),
   currency text not null default 'PEN' check (currency in ('PEN', 'USD')),
   notes text,
   created_at timestamptz not null default now(),
   foreign key (renewal_id, owner_id) references public.renewals(id, owner_id) on delete cascade,
   unique (renewal_id, renewal_due_on)
+);
+
+create table if not exists public.client_annual_billing (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  client_id uuid not null,
+  billing_year integer not null check (billing_year between 2000 and 2100),
+  currency text not null default 'PEN' check (currency in ('PEN', 'USD')),
+  quoted_total numeric(12,2) check (quoted_total >= 0),
+  charged_total numeric(12,2) check (charged_total >= 0),
+  charged_on date,
+  notes text,
+  created_at timestamptz not null default now(),
+  foreign key (client_id, owner_id) references public.clients(id, owner_id) on delete cascade,
+  unique (client_id, billing_year),
+  check (quoted_total is not null or charged_total is not null)
 );
 
 create table if not exists public.credentials (
@@ -107,6 +125,7 @@ create table if not exists public.user_profiles (
 
 create index if not exists renewals_owner_due on public.renewals(owner_id, due_date);
 create index if not exists renewal_payments_owner_date on public.renewal_payments(owner_id, paid_on desc);
+create index if not exists annual_billing_owner_year on public.client_annual_billing(owner_id, billing_year desc);
 create index if not exists transactions_owner_date on public.transactions(owner_id, occurred_on);
 create index if not exists events_owner_date on public.calendar_events(owner_id, event_date);
 create index if not exists credentials_owner_client on public.credentials(owner_id, client_id);
@@ -114,6 +133,7 @@ create index if not exists credentials_owner_client on public.credentials(owner_
 alter table public.clients enable row level security;
 alter table public.renewals enable row level security;
 alter table public.renewal_payments enable row level security;
+alter table public.client_annual_billing enable row level security;
 alter table public.credentials enable row level security;
 alter table public.transactions enable row level security;
 alter table public.calendar_events enable row level security;
@@ -130,6 +150,10 @@ drop policy if exists owner_renewal_payments on public.renewal_payments;
 create policy owner_renewal_payments on public.renewal_payments for all to authenticated
   using (owner_id = (select auth.uid())) with check (owner_id = (select auth.uid()));
 grant select, insert, update, delete on public.renewal_payments to authenticated;
+drop policy if exists owner_annual_billing on public.client_annual_billing;
+create policy owner_annual_billing on public.client_annual_billing for all to authenticated
+  using (owner_id = (select auth.uid())) with check (owner_id = (select auth.uid()));
+grant select, insert, update, delete on public.client_annual_billing to authenticated;
 drop policy if exists owner_credentials on public.credentials;
 create policy owner_credentials on public.credentials for all to authenticated
   using (owner_id = (select auth.uid())) with check (owner_id = (select auth.uid()));
@@ -210,10 +234,10 @@ begin
   end if;
 
   insert into public.renewal_payments
-    (owner_id, renewal_id, paid_on, renewal_due_on, provider_cost, client_price, currency, notes)
+    (owner_id, renewal_id, paid_on, renewal_due_on, billing_year, provider_cost, quoted_provider_cost, client_price, currency, notes)
   values
-    (item.owner_id, item.id, p_paid_on, item.due_date, p_provider_cost,
-     p_client_price, item.currency, p_notes);
+    (item.owner_id, item.id, p_paid_on, item.due_date, extract(year from item.due_date)::integer, p_provider_cost,
+     item.provider_cost, p_client_price, item.currency, p_notes);
 
   if p_provider_cost > 0 then
     select company_name into company from public.clients where id = item.client_id;

@@ -1856,6 +1856,30 @@ nav {
   font-size: 13px;
   color: #141414;
 }
+.login-recovery-button {
+  display: block;
+  margin: 19px auto 0;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: #ff9b45;
+  font-size: 12px;
+  font-weight: 600;
+}
+.login-recovery-button:hover {
+  text-decoration: underline;
+}
+.login-recovery-button:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+.login-recovery-note {
+  margin: 13px 0 0;
+  color: #e3e3e3;
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
 .login-foot {
   display: flex;
   align-items: center;

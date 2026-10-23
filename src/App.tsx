@@ -41,7 +41,7 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-import { configured, supabase } from "./lib/supabase";
+import { configured, passwordLinkPending, supabase } from "./lib/supabase";
 import {
   daysUntil,
   money,
@@ -85,12 +85,6 @@ function BrandMark() {
 function LoginVisual() {
   return <div className="login-intro" aria-hidden="true" />;
 }
-const authLinkType = (() => {
-  if (typeof window === "undefined") return null;
-  const hash = new URLSearchParams(window.location.hash.slice(1));
-  const query = new URLSearchParams(window.location.search);
-  return hash.get("type") ?? query.get("type");
-})();
 const offsetDate = (days: number) => {
   const d = parseDay(today());
   d.setDate(d.getDate() + days);
@@ -324,9 +318,7 @@ function SectionHeading({
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
-  const [settingPassword, setSettingPassword] = useState(
-    authLinkType === "invite" || authLinkType === "recovery",
-  );
+  const [settingPassword, setSettingPassword] = useState(passwordLinkPending);
   const [authReady, setAuthReady] = useState(!configured);
   const [data, setData] = useState<Data>(configured ? emptyData : demoData);
   const [view, setView] = useState<View>("overview");
@@ -340,6 +332,7 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
   const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [recoverySent, setRecoverySent] = useState(false);
   const [vaultVerifier, setVaultVerifier] = useState<string | null>(null);
   const [passphrase, setPassphrase] = useState("");
   const [revealed, setRevealed] = useState<Record<string, string>>({});
@@ -354,8 +347,9 @@ export default function App() {
       setAuthReady(true);
     });
     const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, nextSession) => {
+      (event, nextSession) => {
         setSession(nextSession);
+        if (event === "PASSWORD_RECOVERY") setSettingPassword(true);
         if (!nextSession) {
           setData(emptyData);
           setPassphrase("");
@@ -591,6 +585,25 @@ export default function App() {
     setBusy(false);
     if (error)
       setToast("No se pudo iniciar sesión. Revisa el correo y la contraseña.");
+  }
+
+  async function sendPasswordLink() {
+    if (!supabase) return;
+    const form = document.querySelector<HTMLFormElement>("#login-form");
+    if (!form) return;
+    const identity = fromForm(form, "identity").toLowerCase();
+    if (identity !== LOGIN_ALIAS && identity !== LOGIN_EMAIL) {
+      setToast("Escribe primero tu usuario o correo para recibir el enlace.");
+      return;
+    }
+    setBusy(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(LOGIN_EMAIL);
+    setBusy(false);
+    if (error) {
+      setToast("No pudimos enviar el enlace. Espera unos minutos e inténtalo de nuevo.");
+      return;
+    }
+    setRecoverySent(true);
   }
 
   async function setAccountPassword(event: FormEvent<HTMLFormElement>) {
@@ -963,7 +976,7 @@ export default function App() {
             <span className="eyebrow">ACCESO PERSONAL</span>
             <h2>Bienvenida de nuevo.</h2>
             <p>Ingresa a tu espacio de trabajo.</p>
-            <form onSubmit={signIn} autoComplete="off">
+            <form id="login-form" onSubmit={signIn} autoComplete="off">
               <label>
                 Usuario o correo
                 <input
@@ -999,6 +1012,19 @@ export default function App() {
                 {busy ? "Ingresando…" : "Ingresar"} <ArrowRight size={18} />
               </button>
             </form>
+            <button
+              className="login-recovery-button"
+              type="button"
+              onClick={sendPasswordLink}
+              disabled={busy}
+            >
+              Configurar o recuperar contraseña
+            </button>
+            {recoverySent && (
+              <p className="login-recovery-note" role="status">
+                Revisa tu correo. Abre el enlace más reciente para definir una contraseña nueva.
+              </p>
+            )}
             <span className="login-foot"><ShieldCheck size={16} /> Acceso privado para tu cuenta.</span>
           </div>
         </div>

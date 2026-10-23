@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { annualBreakdown, annualYears } from "../src/lib/annual.ts";
+import { annualBreakdown, annualYears, chargeTotal, itemizedCharge } from "../src/lib/annual.ts";
+import { credentialPriority } from "../src/lib/credentials.ts";
 
 const service = (id, kind, dueDate, firstDate, estimate, currency = "PEN") => ({
   id, kind, due_date: dueDate, first_purchased_on: firstDate,
@@ -11,57 +12,76 @@ const payment = (renewalId, year, cost, currency = "PEN", quote = null) => ({
   provider_cost: cost, quoted_provider_cost: quote, currency,
 });
 
-test("separa el primer año real de la cotización del segundo", () => {
+test("mantiene separados los pagos reales del primer año y la estimación del segundo", () => {
   const services = [
     service("hosting", "hosting", "2026-11-10", "2025-11-10", 280),
     service("domain", "domain", "2026-12-09", "2025-12-09", 65),
   ];
   const payments = [payment("hosting", 2025, 120), payment("domain", 2025, 30)];
-  const first = annualBreakdown(2025, services, payments, { charged_total: 200, quoted_total: 200, currency: "PEN" });
-  const second = annualBreakdown(2026, services, payments, { charged_total: null, quoted_total: 500, currency: "PEN" });
-  assert.equal(first.actualSupport.amount, 50);
-  assert.equal(first.estimatedSupport.reason, "costs");
-  assert.equal(second.estimatedSupport.amount, 155);
+  const first = annualBreakdown(2025, services, payments);
+  const second = annualBreakdown(2026, services, payments);
+  assert.deepEqual(first.costs.map((item) => item.history[0].provider_cost), [120, 30]);
+  assert.deepEqual(second.costs.map((item) => item.estimatedCost), [280, 65]);
   assert.deepEqual(annualYears(services, payments, []), [2026, 2025]);
 });
 
-test("no calcula soporte cuando se mezclan dólares y soles", () => {
-  const services = [
+test("el total del cliente es la suma de los tres cobros explícitos, no de los costos del proveedor", () => {
+  const billing = {
+    currency: "PEN", quoted_total: 999, charged_total: 999,
+    quoted_hosting: 150, quoted_domain: 30, quoted_support: 50,
+    charged_hosting: 150, charged_domain: 30, charged_support: 50,
+  };
+  assert.equal(itemizedCharge(billing), true);
+  assert.equal(chargeTotal(billing, "quoted"), 230);
+  assert.equal(chargeTotal(billing, "charged"), 230);
+  const costs = annualBreakdown(2025, [
     service("hosting", "hosting", "2026-11-10", "2025-11-10", 280),
+    service("domain", "domain", "2026-12-09", "2025-12-09", 65),
+  ], [payment("hosting", 2025, 120), payment("domain", 2025, 25)]).costs;
+  assert.equal(costs.reduce((sum, item) => sum + item.history[0].provider_cost, 0), 145);
+  assert.equal(billing.charged_support, 50);
+});
+
+test("acepta hosting, dominio o soporte por separado, incluso con cobro cero", () => {
+  for (const serviceName of ["hosting", "domain", "support"]) {
+    const billing = {
+      quoted_total: null, charged_total: null,
+      quoted_hosting: null, quoted_domain: null, quoted_support: null,
+      charged_hosting: null, charged_domain: null, charged_support: null,
+      [`charged_${serviceName}`]: 0,
+    };
+    assert.equal(itemizedCharge(billing), true);
+    assert.equal(chargeTotal(billing, "charged"), 0);
+    assert.equal(chargeTotal(billing, "quoted"), null);
+  }
+  assert.deepEqual(annualYears([service("support", "support", "2026-11-10", "2025-11-10", 0)], [], []), [2026, 2025]);
+});
+
+test("un proveedor en USD conserva su moneda y no altera el cobro en PEN", () => {
+  const costs = annualBreakdown(2025, [
     service("domain", "domain", "2026-12-09", "2025-12-09", 15, "USD"),
-  ];
-  const payments = [payment("hosting", 2025, 120), payment("domain", 2025, 10, "USD")];
-  const first = annualBreakdown(2025, services, payments, { charged_total: 200, quoted_total: null, currency: "PEN" });
-  const second = annualBreakdown(2026, services, payments, { charged_total: null, quoted_total: 500, currency: "PEN" });
-  assert.equal(first.actualSupport.reason, "currency");
-  assert.equal(second.estimatedSupport.reason, "currency");
+  ], [payment("domain", 2025, 10, "USD")]).costs;
+  assert.equal(costs[0].history[0].currency, "USD");
+  assert.equal(chargeTotal({ charged_domain: 60, charged_hosting: null, charged_support: 20, quoted_domain: null, quoted_hosting: null, quoted_support: null }, "charged"), 80);
 });
 
-test("no presenta un soporte inflado si falta un pago del proveedor", () => {
-  const services = [
-    service("hosting", "hosting", "2026-11-10", "2025-11-10", 280),
-    service("domain", "domain", "2026-12-09", "2025-12-09", 65),
-  ];
-  const result = annualBreakdown(2025, services, [payment("hosting", 2025, 120)], { charged_total: 200, quoted_total: null, currency: "PEN" });
-  assert.equal(result.actualSupport.reason, "costs");
+test("conserva los totales de registros anteriores que todavía no tienen desglose", () => {
+  const previous = { quoted_total: 230, charged_total: 230 };
+  assert.equal(itemizedCharge(previous), false);
+  assert.equal(chargeTotal(previous, "charged"), 230);
 });
 
-test("no suma un servicio de soporte por segunda vez al total del paquete", () => {
-  const services = [
-    service("hosting", "hosting", "2026-11-10", "2025-11-10", 280),
-    service("domain", "domain", "2026-12-09", "2025-12-09", 65),
-    { ...service("support", "support", "2026-12-09", "2025-12-09", 0), client_price: 50 },
-  ];
-  const payments = [payment("hosting", 2025, 120), payment("domain", 2025, 30)];
-  const result = annualBreakdown(2025, services, payments, { charged_total: 200, quoted_total: null, currency: "PEN" });
-  assert.equal(result.actualSupport.amount, 50);
-  assert.equal(result.costs.length, 2);
+test("el costo estimado del proveedor del año pagado no cambia al avanzar el vencimiento", () => {
+  const costs = annualBreakdown(2026, [
+    service("hosting", "hosting", "2027-11-10", "2025-11-10", 310),
+  ], [payment("hosting", 2026, 290, "PEN", 280)]).costs;
+  assert.equal(costs[0].history[0].provider_cost, 290);
+  assert.equal(costs[0].estimatedCost, 280);
 });
 
-test("conserva la cotización del año pagado al avanzar el vencimiento", () => {
-  const services = [service("hosting", "hosting", "2027-11-10", "2025-11-10", 310)];
-  const payments = [payment("hosting", 2026, 290, "PEN", 280)];
-  const result = annualBreakdown(2026, services, payments, { charged_total: 480, quoted_total: 450, currency: "PEN" });
-  assert.equal(result.actualSupport.amount, 190);
-  assert.equal(result.estimatedSupport.amount, 170);
+test("ordena cPanel y Namecheap antes de los demás accesos sin importar mayúsculas", () => {
+  const services = ["Gmail", "NameCheap", "Hosting", " cPanel ", "Outlook"];
+  assert.deepEqual(services.sort((a, b) => credentialPriority(a) - credentialPriority(b)), [
+    " cPanel ", "NameCheap", "Gmail", "Hosting", "Outlook",
+  ]);
 });

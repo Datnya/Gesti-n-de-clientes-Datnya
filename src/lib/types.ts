@@ -57,6 +57,12 @@ export interface AnnualBilling {
   currency: Currency;
   quoted_total: number | null;
   charged_total: number | null;
+  quoted_hosting: number | null;
+  quoted_domain: number | null;
+  quoted_support: number | null;
+  charged_hosting: number | null;
+  charged_domain: number | null;
+  charged_support: number | null;
   charged_on: string | null;
   notes: string | null;
   created_at: string;

@@ -1,4 +1,23 @@
-import type { AnnualBilling, Currency, Renewal, RenewalPayment } from "./types";
+import type { AnnualBilling, Renewal, RenewalPayment } from "./types";
+
+export const billingServices = ["hosting", "domain", "support"] as const;
+export type BillingService = (typeof billingServices)[number];
+
+export function itemizedCharge(billing: AnnualBilling | undefined) {
+  return Boolean(billing && billingServices.some((service) =>
+    billing[`quoted_${service}`] !== null && billing[`quoted_${service}`] !== undefined ||
+    billing[`charged_${service}`] !== null && billing[`charged_${service}`] !== undefined,
+  ));
+}
+
+export function chargeTotal(billing: AnnualBilling | undefined, mode: "quoted" | "charged") {
+  if (!billing) return null;
+  if (!itemizedCharge(billing)) return billing[`${mode}_total`];
+  const amounts = billingServices.map((service) => billing[`${mode}_${service}`]);
+  return amounts.every((amount) => amount === null || amount === undefined)
+    ? null
+    : amounts.reduce<number>((total, amount) => total + Number(amount ?? 0), 0);
+}
 
 export const paymentYear = (payment: RenewalPayment) =>
   payment.billing_year ?? Number(payment.paid_on.slice(0, 4));
@@ -33,7 +52,6 @@ export function annualBreakdown(
   year: number,
   renewals: Renewal[],
   payments: RenewalPayment[],
-  billing: AnnualBilling | undefined,
 ) {
   const costs = renewals
     .filter((renewal) => renewal.kind === "hosting" || renewal.kind === "domain")
@@ -58,30 +76,5 @@ export function annualBreakdown(
     })
     .filter((item) => item.active);
 
-  function supportAmount(mode: "actual" | "estimate") {
-    const total = mode === "actual" ? billing?.charged_total : billing?.quoted_total;
-    if (total === null || total === undefined) return { reason: "total" as const };
-    const lines = costs;
-    if (!lines.length) return { reason: "costs" as const };
-    if (mode === "actual" && renewals.some((renewal) =>
-      (renewal.kind === "hosting" || renewal.kind === "domain") && renewal.first_purchased_on === null &&
-      Number(renewal.due_date.slice(0, 4)) > year &&
-      !payments.some((payment) => payment.renewal_id === renewal.id && paymentYear(payment) === year),
-    )) return { reason: "costs" as const };
-    if (mode === "actual" && lines.some((item) => !item.history.length))
-      return { reason: "costs" as const };
-    if (mode === "estimate" && lines.some((item) => item.estimatedCost === null))
-      return { reason: "costs" as const };
-    const currencies = mode === "actual"
-      ? lines.flatMap((item) => item.history.map((payment) => payment.currency))
-      : lines.map((item) => item.estimatedCurrency);
-    if (currencies.some((currency) => currency !== billing?.currency))
-      return { reason: "currency" as const };
-    const providerTotal = mode === "actual"
-      ? lines.reduce((sum, item) => sum + item.history.reduce((value, payment) => value + Number(payment.provider_cost), 0), 0)
-      : lines.reduce((sum, item) => sum + Number(item.estimatedCost), 0);
-    return { reason: "ready" as const, amount: Number(total) - providerTotal, currency: billing?.currency as Currency };
-  }
-
-  return { costs, actualSupport: supportAmount("actual"), estimatedSupport: supportAmount("estimate") };
+  return { costs };
 }

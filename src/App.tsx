@@ -65,6 +65,8 @@ import type {
   Transaction,
 } from "./lib/types";
 import { AnnualLedger } from "./components/AnnualLedger";
+import { annualBreakdown, billingServices, chargeTotal, itemizedCharge, type BillingService } from "./lib/annual";
+import { credentialPriority } from "./lib/credentials";
 
 type View = "overview" | "clients" | "payments" | "finances" | "calendar";
 const LOGIN_ALIAS = "datnya.monzon";
@@ -215,6 +217,12 @@ const demoData: Data = {
       currency: "PEN",
       quoted_total: 200,
       charged_total: 200,
+      quoted_hosting: 120,
+      quoted_domain: 30,
+      quoted_support: 50,
+      charged_hosting: 120,
+      charged_domain: 30,
+      charged_support: 50,
       charged_on: offsetDate(-347),
       notes: "Primer año con precios promocionales.",
       created_at: today(),
@@ -227,6 +235,12 @@ const demoData: Data = {
       currency: "PEN",
       quoted_total: 500,
       charged_total: null,
+      quoted_hosting: 280,
+      quoted_domain: 65,
+      quoted_support: 155,
+      charged_hosting: null,
+      charged_domain: null,
+      charged_support: null,
       charged_on: null,
       notes: "Cotización aproximada para la renovación.",
       created_at: today(),
@@ -626,8 +640,8 @@ export default function App() {
   );
   const currentYear = new Date().getFullYear();
   const chargedThisYear = (currency: Currency) => data.annualBilling
-    .filter((item) => Number((item.charged_on ?? `${item.billing_year}-01-01`).slice(0, 4)) === currentYear && item.currency === currency && item.charged_total !== null)
-    .reduce((sum, item) => sum + Number(item.charged_total), 0);
+    .filter((item) => Number((item.charged_on ?? `${item.billing_year}-01-01`).slice(0, 4)) === currentYear && item.currency === currency)
+    .reduce((sum, item) => sum + Number(chargeTotal(item, "charged") ?? 0), 0);
   const providerPaidThisYear = (currency: Currency) => data.renewalPayments
     .filter((payment) => Number(payment.paid_on.slice(0, 4)) === currentYear && payment.currency === currency)
     .reduce((sum, payment) => sum + Number(payment.provider_cost), 0);
@@ -931,22 +945,56 @@ export default function App() {
       });
     } else if (editor.kind === "annualBilling") {
       const year = Number(fromForm(form, "billing_year"));
-      const quoted = fromForm(form, "quoted_total");
-      const charged = fromForm(form, "charged_total");
-      if (!quoted && !charged) {
-        setToast("Registra al menos el total cobrado o la cotización aproximada.");
+      const selected = billingServices.filter((service) => new FormData(form).has(`include_${service}`));
+      if (!selected.length) {
+        const previous = editor.item as AnnualBilling | undefined;
+        if (!previous || itemizedCharge(previous)) {
+          setToast("Selecciona al menos un servicio: hosting, dominio o soporte.");
+          return;
+        }
+        await save("client_annual_billing", {
+          billing_year: year,
+          currency: fromForm(form, "currency"),
+          charged_on: optional(fromForm(form, "charged_on")),
+          notes: optional(fromForm(form, "notes")),
+        }, previous.id);
         return;
       }
-      if (fromForm(form, "charged_on") && !charged) {
-        setToast("Si indicas la fecha del cobro, registra también el total que recibiste.");
+      const values = Object.fromEntries(["quoted", "charged"].flatMap((mode) => billingServices.map((service) => {
+        const raw = selected.includes(service) ? fromForm(form, `${mode}_${service}`) : "";
+        return [`${mode}_${service}`, raw === "" ? null : Number(raw)];
+      }))) as Record<string, number | null>;
+      for (const mode of ["quoted", "charged"] as const) {
+        const amounts = selected.map((service) => values[`${mode}_${service}`]);
+        if (amounts.some((amount) => amount !== null) && amounts.some((amount) => amount === null)) {
+          setToast(`Completa el ${mode === "quoted" ? "presupuesto" : "cobro recibido"} de todos los servicios seleccionados. Si uno no tiene costo, escribe 0.`);
+          return;
+        }
+      }
+      const quoted = selected.map((service) => values[`quoted_${service}`]);
+      const charged = selected.map((service) => values[`charged_${service}`]);
+      const previous = editor.item as AnnualBilling | undefined;
+      if (previous && !itemizedCharge(previous) &&
+        (previous.quoted_total !== null && quoted.every((amount) => amount === null) ||
+         previous.charged_total !== null && charged.every((amount) => amount === null))) {
+        setToast("Para desglosar este registro anterior, reparte tanto el presupuesto como el cobro existente entre los servicios seleccionados.");
+        return;
+      }
+      if (quoted.every((amount) => amount === null) && charged.every((amount) => amount === null)) {
+        setToast("Ingresa al menos un presupuesto o un cobro recibido del cliente.");
+        return;
+      }
+      if (fromForm(form, "charged_on") && charged.every((amount) => amount === null)) {
+        setToast("Para registrar la fecha, indica cuánto recibiste del cliente por cada servicio seleccionado.");
         return;
       }
       await save("client_annual_billing", {
         client_id: editor.clientId ?? (editor.item as AnnualBilling).client_id,
         billing_year: year,
         currency: fromForm(form, "currency"),
-        quoted_total: quoted ? Number(quoted) : null,
-        charged_total: charged ? Number(charged) : null,
+        ...values,
+        quoted_total: quoted.every((amount) => amount === null) ? null : quoted.reduce<number>((sum, amount) => sum + Number(amount ?? 0), 0),
+        charged_total: charged.every((amount) => amount === null) ? null : charged.reduce<number>((sum, amount) => sum + Number(amount ?? 0), 0),
         charged_on: optional(fromForm(form, "charged_on")),
         notes: optional(fromForm(form, "notes")),
       }, id);
@@ -964,11 +1012,17 @@ export default function App() {
       const encrypted = password
         ? await encryptSecret(password, passphrase)
         : ((editor.item as Credential | undefined)?.encrypted_password ?? null);
+      const service = fromForm(form, "service");
+      const customService = fromForm(form, "service_other");
+      if (service === "other" && !customService) {
+        setToast("Escribe el nombre del otro tipo de acceso.");
+        return;
+      }
       await save(
         "credentials",
         {
           client_id: clientId,
-          service: fromForm(form, "service"),
+          service: service === "other" ? customService : service,
           login_email: optional(fromForm(form, "login_email")),
           username: optional(fromForm(form, "username")),
           login_url: optional(loginUrl),
@@ -1722,6 +1776,7 @@ export default function App() {
                         ).length ? (
                           data.credentials
                             .filter((c) => c.client_id === selectedClient.id)
+                            .sort((first, second) => credentialPriority(first.service) - credentialPriority(second.service))
                             .map((credential) => (
                               <div
                                 className="credential-item"
@@ -2516,7 +2571,12 @@ export default function App() {
                 )}
                 {editor.kind === "paid" && <PaymentFields renewal={editor.item as Renewal} historical={false} />}
                 {editor.kind === "pastPayment" && <PaymentFields renewal={data.renewals.find((r) => r.id === editor.renewalId)!} historical />}
-                {editor.kind === "annualBilling" && <AnnualBillingFields item={editor.item as AnnualBilling | undefined} year={editor.billingYear ?? new Date().getFullYear()} />}
+                {editor.kind === "annualBilling" && <AnnualBillingFields
+                  item={editor.item as AnnualBilling | undefined}
+                  year={editor.billingYear ?? new Date().getFullYear()}
+                  renewals={data.renewals.filter((renewal) => renewal.client_id === (editor.clientId ?? (editor.item as AnnualBilling | undefined)?.client_id))}
+                  payments={data.renewalPayments}
+                />}
                 {editor.kind === "credential" && (
                   <CredentialFields
                     item={editor.item as Credential | undefined}
@@ -2883,19 +2943,80 @@ function PaymentFields({ renewal, historical }: { renewal: Renewal; historical: 
     <Notes />
   </>;
 }
-function AnnualBillingFields({ item, year }: { item?: AnnualBilling; year: number }) {
+function AnnualBillingFields({ item, year, renewals, payments }: {
+  item?: AnnualBilling;
+  year: number;
+  renewals: Renewal[];
+  payments: RenewalPayment[];
+}) {
+  const [activeYear, setActiveYear] = useState(item?.billing_year ?? year);
+  const [currency, setCurrency] = useState<Currency>(item?.currency ?? "PEN");
+  const [selected, setSelected] = useState<Record<BillingService, boolean>>(() => Object.fromEntries(
+    billingServices.map((service) => [service,
+      (item?.[`quoted_${service}`] ?? null) !== null ||
+      (item?.[`charged_${service}`] ?? null) !== null,
+    ]),
+  ) as Record<BillingService, boolean>);
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(
+    ["quoted", "charged"].flatMap((mode) => billingServices.map((service) => [
+      `${mode}_${service}`,
+      item?.[`${mode}_${service}` as keyof AnnualBilling] === null ||
+        item?.[`${mode}_${service}` as keyof AnnualBilling] === undefined
+        ? "" : String(item[`${mode}_${service}` as keyof AnnualBilling]),
+    ])),
+  ));
+  const providerRenewals = renewals.filter((renewal) => renewal.kind === "hosting" || renewal.kind === "domain");
+  const { costs } = annualBreakdown(activeYear, providerRenewals, payments);
+  const total = (mode: "quoted" | "charged") => {
+    const included = billingServices.filter((service) => selected[service]);
+    if (!included.length || included.some((service) => values[`${mode}_${service}`] === "")) return null;
+    return included.reduce((sum, service) => sum + Number(values[`${mode}_${service}`]), 0);
+  };
+  const providerSummary = (service: BillingService, estimated: boolean) => {
+    const amounts = costs.filter(({ renewal }) => renewal.kind === service).flatMap(({ history, estimatedCost, estimatedCurrency }) =>
+      estimated
+        ? estimatedCost === null ? [] : [{ amount: Number(estimatedCost), currency: estimatedCurrency }]
+        : history.map((payment) => ({ amount: Number(payment.provider_cost), currency: payment.currency })),
+    );
+    if (!amounts.length) return "Sin registrar";
+    const byCurrency = new Map<Currency, number>();
+    amounts.forEach(({ amount, currency: providerCurrency }) =>
+      byCurrency.set(providerCurrency, (byCurrency.get(providerCurrency) ?? 0) + amount));
+    return [...byCurrency].map(([providerCurrency, amount]) => money(amount, providerCurrency)).join(" · ");
+  };
+  const names: Record<BillingService, string> = { hosting: "Hosting", domain: "Dominio", support: "Soporte anual" };
   return <>
-    <p className="form-hint">Registra una sola vez el total anual que cobras al cliente por hosting, dominio y soporte. Los costos reales de cada proveedor se anotan en su servicio; la diferencia se muestra como tu ingreso por soporte cuando todos los importes usan la misma moneda. Si deseas incluir el cobro en Finanzas, regístralo allí como ingreso.</p>
+    <p className="form-hint">Selecciona únicamente los servicios que este cliente contrató. Escribe cuánto le presupuestaste y/o cuánto te pagó por cada uno. El total se suma automáticamente. Lo que pagas a los proveedores se registra en el historial de cada servicio y aparece aquí por separado.</p>
+    {item && !itemizedCharge(item) &&
+      <p className="form-hint">Registro anterior sin desglose: presupuesto {item.quoted_total === null ? "sin registrar" : money(Number(item.quoted_total), item.currency)}; cobro recibido {item.charged_total === null ? "sin registrar" : money(Number(item.charged_total), item.currency)}. Para actualizarlo, distribuye esos importes entre los servicios correspondientes.</p>}
     <div className="form-grid">
-      <Field label="Año del servicio" name="billing_year" type="number" defaultValue={item?.billing_year ?? year} min={2000} max={2100} required />
-      <Select label="Moneda en que paga el cliente" name="currency" value={item?.currency ?? "PEN"} options={[{ value: "PEN", label: "Soles (PEN)" }, { value: "USD", label: "Dólares (USD)" }]} />
-      <Field label="Total aproximado que le indicaste" name="quoted_total" type="number" defaultValue={item?.quoted_total} min={0} step="0.01" />
-      <Field label="Total que realmente te pagó" name="charged_total" type="number" defaultValue={item?.charged_total} min={0} step="0.01" />
-      <Field label="Fecha del cobro" name="charged_on" type="date" defaultValue={item?.charged_on} />
+      <label className="field"><span>Año del servicio <b>*</b></span><input name="billing_year" type="number" value={activeYear} onChange={(event) => setActiveYear(Number(event.target.value))} min={2000} max={2100} required /></label>
+      <label className="field"><span>Moneda en que paga el cliente</span><select name="currency" value={currency} onChange={(event) => setCurrency(event.target.value as Currency)}><option value="PEN">Soles (PEN)</option><option value="USD">Dólares (USD)</option></select></label>
     </div>
+    <div className="billing-pick">
+      <strong>¿Qué servicios le estás cobrando este año?</strong>
+      <div>{billingServices.map((service) => <label key={service}><input type="checkbox" name={`include_${service}`} checked={selected[service]} onChange={(event) => setSelected((current) => ({ ...current, [service]: event.target.checked }))} />{names[service]}</label>)}</div>
+    </div>
+    {billingServices.filter((service) => selected[service]).map((service) => <div className="billing-service" key={service}>
+      <h4>{names[service]}</h4>
+      <div className="form-grid">
+        {(["quoted", "charged"] as const).map((mode) => <label className="field" key={mode}>
+          <span>{mode === "quoted" ? "Precio presupuestado al cliente" : "Importe recibido del cliente"}</span>
+          <input name={`${mode}_${service}`} type="number" min={0} step="0.01" value={values[`${mode}_${service}`]} onChange={(event) => setValues((current) => ({ ...current, [`${mode}_${service}`]: event.target.value }))} placeholder="0.00" />
+        </label>)}
+      </div>
+      {service !== "support" && <p>Proveedor · costo estimado: <strong>{providerSummary(service, true)}</strong> · pagado: <strong>{providerSummary(service, false)}</strong></p>}
+      {service === "support" && <p>Este es tu cobro por soporte. Se suma al total del cliente; no se calcula como diferencia de los proveedores.</p>}
+    </div>)}
+    <div className="billing-totals">
+      <div><span>Total presupuestado al cliente</span><strong>{total("quoted") === null ? "Completa todos los conceptos o déjalos vacíos" : money(total("quoted")!, currency)}</strong></div>
+      <div><span>Total recibido del cliente</span><strong>{total("charged") === null ? "Completa todos los conceptos o déjalos vacíos" : money(total("charged")!, currency)}</strong></div>
+    </div>
+    <Field label="Fecha en que recibiste el pago del cliente" name="charged_on" type="date" defaultValue={item?.charged_on} />
     <Notes value={item?.notes} />
   </>;
 }
+const credentialServices = ["CPanel", "Namecheap", "Hosting", "Gmail", "Outlook"];
 function CredentialFields({
   item,
   clients,
@@ -2909,6 +3030,8 @@ function CredentialFields({
   vaultOpen: boolean;
   onUnlock: () => void;
 }) {
+  const knownService = credentialServices.find((service) => service.toLowerCase() === item?.service.trim().toLowerCase());
+  const [service, setService] = useState(knownService ?? (item?.service ? "other" : ""));
   return (
     <>
       <div className="form-grid">
@@ -2917,13 +3040,12 @@ function CredentialFields({
           value={item?.client_id ?? clientId}
           required
         />
-        <Field
-          label="Servicio"
-          name="service"
-          defaultValue={item?.service}
-          required
-          placeholder="cPanel, Namecheap, Gmail…"
-        />
+        <label className="field"><span>Servicio <b>*</b></span><select name="service" value={service} onChange={(event) => setService(event.target.value)} required>
+          <option value="">Selecciona el tipo de acceso</option>
+          {credentialServices.map((option) => <option key={option} value={option}>{option}</option>)}
+          <option value="other">Otros</option>
+        </select></label>
+        {service === "other" && <Field label="Nombre del otro acceso" name="service_other" defaultValue={knownService ? "" : item?.service} required placeholder="Escribe el tipo de acceso" />}
         <Field
           label="Correo de acceso"
           name="login_email"

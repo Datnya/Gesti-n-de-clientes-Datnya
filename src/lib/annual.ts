@@ -1,4 +1,4 @@
-import type { AnnualBilling, Renewal, RenewalPayment } from "./types";
+import type { AnnualBilling, AnnualCostBreakdown, Currency, Renewal, RenewalPayment } from "./types";
 
 export const billingServices = ["hosting", "domain", "support"] as const;
 export type BillingService = (typeof billingServices)[number];
@@ -12,11 +12,34 @@ export function itemizedCharge(billing: AnnualBilling | undefined) {
 
 export function chargeTotal(billing: AnnualBilling | undefined, mode: "quoted" | "charged") {
   if (!billing) return null;
+  if (billing.cost_breakdown?.version === 2) return billing[`${mode}_total`];
   if (!itemizedCharge(billing)) return billing[`${mode}_total`];
   const amounts = billingServices.map((service) => billing[`${mode}_${service}`]);
   return amounts.every((amount) => amount === null || amount === undefined)
     ? null
     : amounts.reduce<number>((total, amount) => total + Number(amount ?? 0), 0);
+}
+
+export function calculateSupport(
+  total: number | null,
+  breakdown: AnnualCostBreakdown,
+  clientCurrency: Currency,
+  mode: "quoted" | "charged",
+) {
+  if (!breakdown.support) return { status: "excluded" as const };
+  if (total === null) return { status: "missing_total" as const };
+  let providerTotal = 0;
+  for (const service of ["hosting", "domain"] as const) {
+    const cost = breakdown[service];
+    if (!cost) continue;
+    const original = mode === "quoted" ? cost.estimated : cost.paid;
+    if (original === null) return { status: "missing_cost" as const, service };
+    const equivalent = mode === "quoted" ? cost.estimated_client_currency : cost.paid_client_currency;
+    if (cost.currency !== clientCurrency && equivalent === null)
+      return { status: "missing_equivalent" as const, service };
+    providerTotal += cost.currency === clientCurrency ? original : Number(equivalent);
+  }
+  return { status: "ready" as const, amount: Math.round((total - providerTotal) * 100) / 100 };
 }
 
 export const paymentYear = (payment: RenewalPayment) =>

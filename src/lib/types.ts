@@ -63,9 +63,25 @@ export interface AnnualBilling {
   charged_hosting: number | null;
   charged_domain: number | null;
   charged_support: number | null;
+  cost_breakdown: AnnualCostBreakdown | null;
   charged_on: string | null;
   notes: string | null;
   created_at: string;
+}
+
+export interface AnnualProviderCost {
+  currency: Currency;
+  estimated: number | null;
+  paid: number | null;
+  estimated_client_currency: number | null;
+  paid_client_currency: number | null;
+}
+
+export interface AnnualCostBreakdown {
+  version: 2;
+  hosting: AnnualProviderCost | null;
+  domain: AnnualProviderCost | null;
+  support: boolean;
 }
 
 export interface Credential {

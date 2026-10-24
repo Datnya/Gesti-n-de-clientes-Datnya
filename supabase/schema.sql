@@ -68,6 +68,7 @@ create table if not exists public.client_annual_billing (
   charged_hosting numeric(12,2) check (charged_hosting >= 0),
   charged_domain numeric(12,2) check (charged_domain >= 0),
   charged_support numeric(12,2) check (charged_support >= 0),
+  cost_breakdown jsonb check (cost_breakdown is null or jsonb_typeof(cost_breakdown) = 'object'),
   charged_on date,
   notes text,
   created_at timestamptz not null default now(),

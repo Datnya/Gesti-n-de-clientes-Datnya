@@ -1,6 +1,6 @@
-import { annualBreakdown, annualYears, billingServices, chargeTotal, itemizedCharge, type BillingService } from "../lib/annual";
+import { annualBreakdown, annualYears, billingServices, calculateSupport, chargeTotal, itemizedCharge, type BillingService } from "../lib/annual";
 import { money, prettyDate } from "../lib/dates";
-import type { AnnualBilling, Currency, Renewal, RenewalPayment } from "../lib/types";
+import type { AnnualBilling, AnnualProviderCost, Currency, Renewal, RenewalPayment } from "../lib/types";
 
 type Props = {
   renewals: Renewal[];
@@ -34,6 +34,22 @@ function amount(value: number | null | undefined, currency: Currency) {
   return value === null || value === undefined ? "Sin registrar" : money(Number(value), currency);
 }
 
+function providerCost(cost: AnnualProviderCost, mode: "quoted" | "charged", clientCurrency: Currency) {
+  const original = mode === "quoted" ? cost.estimated : cost.paid;
+  const equivalent = mode === "quoted" ? cost.estimated_client_currency : cost.paid_client_currency;
+  return <>
+    <strong>{amount(original, cost.currency)}</strong>
+    {cost.currency !== clientCurrency && <small>Equivalente en {clientCurrency}: {amount(equivalent, clientCurrency)}</small>}
+  </>;
+}
+
+function supportAmount(result: ReturnType<typeof calculateSupport>, currency: Currency) {
+  if (result.status === "ready") return money(result.amount, currency);
+  if (result.status === "missing_total") return "Pendiente del total del cliente";
+  if (result.status === "missing_equivalent") return "Pendiente del equivalente en la moneda del cliente";
+  return "Pendiente del costo del proveedor";
+}
+
 export function AnnualLedger({ renewals, payments, billing, onEdit }: Props) {
   const providerRenewals = renewals.filter((renewal) => renewal.kind === "hosting" || renewal.kind === "domain");
   const providerPayments = payments.filter((payment) => providerRenewals.some((renewal) => renewal.id === payment.renewal_id));
@@ -42,7 +58,7 @@ export function AnnualLedger({ renewals, payments, billing, onEdit }: Props) {
     <div className="annual-ledger-head">
       <div>
         <h4>Cobros y costos por año</h4>
-        <p>El total del cliente suma solo los conceptos que contrató. Los pagos a proveedores se muestran aparte, en su moneda original.</p>
+        <p>El soporte se calcula desde el total del cliente y los costos de los proveedores seleccionados. Cada moneda se muestra por separado.</p>
       </div>
       <button className="small-add" onClick={() => onEdit(new Date().getFullYear())}>+ Otro año</button>
     </div>
@@ -51,6 +67,7 @@ export function AnnualLedger({ renewals, payments, billing, onEdit }: Props) {
       const charge = billing.find((item) => item.billing_year === year);
       const { costs } = annualBreakdown(year, providerRenewals, providerPayments);
       const currency = charge?.currency ?? "PEN";
+      const automatic = charge?.cost_breakdown?.version === 2 ? charge.cost_breakdown : null;
       const itemized = itemizedCharge(charge);
       const included = itemized ? billingServices.filter((service) =>
         charge?.[`quoted_${service}`] !== null && charge?.[`quoted_${service}`] !== undefined ||
@@ -61,7 +78,27 @@ export function AnnualLedger({ renewals, payments, billing, onEdit }: Props) {
           <div><strong>{year}</strong><span>{charge?.currency ?? "Moneda del cliente por definir"}</span></div>
           <button className="small-add" onClick={() => onEdit(year, charge)}>{charge ? "Editar cobro" : "Registrar cobro"}</button>
         </div>
-        {itemized ? <div className="annual-columns">
+        {automatic ? <div className="annual-columns">
+          <div className="annual-column">
+            <h5>Importes reales</h5>
+            <div className="annual-total"><span>Total recibido del cliente</span><strong>{amount(chargeTotal(charge, "charged"), currency)}</strong></div>
+            {charge?.charged_on && <small className="annual-date">Recibido el {prettyDate(charge.charged_on)}</small>}
+            {(["hosting", "domain"] as const).filter((service) => automatic[service]).map((service) => <div className="annual-service-line" key={service}>
+              <span>Pagado al proveedor de {serviceNames[service]}</span>
+              {providerCost(automatic[service]!, "charged", currency)}
+            </div>)}
+            {automatic.support && <div className="annual-support"><span>Tu ingreso por soporte</span><strong>{supportAmount(calculateSupport(chargeTotal(charge, "charged"), automatic, currency, "charged"), currency)}</strong></div>}
+          </div>
+          <div className="annual-column">
+            <h5>Importes estimados</h5>
+            <div className="annual-total"><span>Total presupuestado al cliente</span><strong>{amount(chargeTotal(charge, "quoted"), currency)}</strong></div>
+            {(["hosting", "domain"] as const).filter((service) => automatic[service]).map((service) => <div className="annual-service-line" key={service}>
+              <span>Costo estimado del proveedor de {serviceNames[service]}</span>
+              {providerCost(automatic[service]!, "quoted", currency)}
+            </div>)}
+            {automatic.support && <div className="annual-support"><span>Soporte estimado</span><strong>{supportAmount(calculateSupport(chargeTotal(charge, "quoted"), automatic, currency, "quoted"), currency)}</strong></div>}
+          </div>
+        </div> : itemized ? <div className="annual-columns">
           <div className="annual-column">
             <h5>Cobro real al cliente</h5>
             {included.map((service) => <div className="annual-service-line" key={service}>
@@ -93,7 +130,7 @@ export function AnnualLedger({ renewals, payments, billing, onEdit }: Props) {
             {costs.map(({ renewal, estimatedCost, estimatedCurrency }) => <div className="annual-cost" key={renewal.id}><span>Costo estimado del proveedor de {renewal.label}</span><strong>{estimatedCost === null ? "Sin registrar" : money(Number(estimatedCost), estimatedCurrency)}</strong></div>)}
           </div>
         </div>}
-        {charge && !itemized && <p className="annual-note">Este cobro se guardó sin desglose. Edita el año para separar lo cobrado por hosting, dominio y soporte; no se modificó el total anterior.</p>}
+        {charge && !automatic && <p className="annual-note">Registro del formulario anterior. Sus totales se conservaron; puedes editarlo para calcular automáticamente el soporte a partir de los costos del proveedor.</p>}
         {charge?.notes && <p className="annual-note">{charge.notes}</p>}
       </div>;
     })}

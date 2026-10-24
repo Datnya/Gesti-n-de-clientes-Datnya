@@ -9,11 +9,7 @@ type Props = {
   onEdit: (year: number, item?: AnnualBilling) => void;
 };
 
-const serviceNames: Record<BillingService, string> = {
-  hosting: "Hosting",
-  domain: "Dominio",
-  support: "Soporte",
-};
+const serviceNames: Record<BillingService, string> = { hosting: "Hosting", domain: "Dominio", support: "Soporte" };
 
 function groupedMoney(amounts: { amount: number; currency: Currency }[]) {
   if (!amounts.length) return "Sin registrar";
@@ -22,24 +18,14 @@ function groupedMoney(amounts: { amount: number; currency: Currency }[]) {
   return [...totals].map(([currency, amount]) => money(amount, currency)).join(" · ");
 }
 
-function providerMoney(costs: ReturnType<typeof annualBreakdown>["costs"], service: BillingService, estimated: boolean) {
-  return groupedMoney(costs.filter(({ renewal }) => renewal.kind === service).flatMap(({ history, estimatedCost, estimatedCurrency }) =>
-    estimated
-      ? estimatedCost === null ? [] : [{ amount: Number(estimatedCost), currency: estimatedCurrency }]
-      : history.map((payment) => ({ amount: Number(payment.provider_cost), currency: payment.currency })),
-  ));
-}
-
 function amount(value: number | null | undefined, currency: Currency) {
   return value === null || value === undefined ? "Sin registrar" : money(Number(value), currency);
 }
 
-function providerCost(cost: AnnualProviderCost, mode: "quoted" | "charged", clientCurrency: Currency) {
-  const original = mode === "quoted" ? cost.estimated : cost.paid;
-  const equivalent = mode === "quoted" ? cost.estimated_client_currency : cost.paid_client_currency;
+function providerCost(cost: AnnualProviderCost, clientCurrency: Currency) {
   return <>
-    <strong>{amount(original, cost.currency)}</strong>
-    {cost.currency !== clientCurrency && <small>Equivalente en {clientCurrency}: {amount(equivalent, clientCurrency)}</small>}
+    <strong>{amount(cost.paid, cost.currency)}</strong>
+    {cost.currency !== clientCurrency && <small>Equivalente en {clientCurrency}: {amount(cost.paid_client_currency, clientCurrency)}</small>}
   </>;
 }
 
@@ -58,7 +44,7 @@ export function AnnualLedger({ renewals, payments, billing, onEdit }: Props) {
     <div className="annual-ledger-head">
       <div>
         <h4>Cobros y costos por año</h4>
-        <p>El soporte se calcula desde el total del cliente y los costos de los proveedores seleccionados. Cada moneda se muestra por separado.</p>
+        <p>El soporte se calcula desde el total recibido del cliente y los costos pagados a los proveedores. Cada moneda se muestra por separado.</p>
       </div>
       <button className="small-add" onClick={() => onEdit(new Date().getFullYear())}>+ Otro año</button>
     </div>
@@ -70,7 +56,6 @@ export function AnnualLedger({ renewals, payments, billing, onEdit }: Props) {
       const automatic = charge?.cost_breakdown?.version === 2 ? charge.cost_breakdown : null;
       const itemized = itemizedCharge(charge);
       const included = itemized ? billingServices.filter((service) =>
-        charge?.[`quoted_${service}`] !== null && charge?.[`quoted_${service}`] !== undefined ||
         charge?.[`charged_${service}`] !== null && charge?.[`charged_${service}`] !== undefined,
       ) : [];
       return <div className="annual-year" key={year}>
@@ -78,59 +63,31 @@ export function AnnualLedger({ renewals, payments, billing, onEdit }: Props) {
           <div><strong>{year}</strong><span>{charge?.currency ?? "Moneda del cliente por definir"}</span></div>
           <button className="small-add" onClick={() => onEdit(year, charge)}>{charge ? "Editar cobro" : "Registrar cobro"}</button>
         </div>
-        {automatic ? <div className="annual-columns">
-          <div className="annual-column">
-            <h5>Importes reales</h5>
+        <div className="annual-column">
+          <h5>Importes</h5>
+          {automatic ? <>
             <div className="annual-total"><span>Total recibido del cliente</span><strong>{amount(chargeTotal(charge, "charged"), currency)}</strong></div>
             {charge?.charged_on && <small className="annual-date">Recibido el {prettyDate(charge.charged_on)}</small>}
             {(["hosting", "domain"] as const).filter((service) => automatic[service]).map((service) => <div className="annual-service-line" key={service}>
               <span>Pagado al proveedor de {serviceNames[service]}</span>
-              {providerCost(automatic[service]!, "charged", currency)}
+              {providerCost(automatic[service]!, currency)}
             </div>)}
             {automatic.support && <div className="annual-support"><span>Tu ingreso por soporte</span><strong>{supportAmount(calculateSupport(chargeTotal(charge, "charged"), automatic, currency, "charged"), currency)}</strong></div>}
-          </div>
-          <div className="annual-column">
-            <h5>Importes estimados</h5>
-            <div className="annual-total"><span>Total presupuestado al cliente</span><strong>{amount(chargeTotal(charge, "quoted"), currency)}</strong></div>
-            {(["hosting", "domain"] as const).filter((service) => automatic[service]).map((service) => <div className="annual-service-line" key={service}>
-              <span>Costo estimado del proveedor de {serviceNames[service]}</span>
-              {providerCost(automatic[service]!, "quoted", currency)}
-            </div>)}
-            {automatic.support && <div className="annual-support"><span>Soporte estimado</span><strong>{supportAmount(calculateSupport(chargeTotal(charge, "quoted"), automatic, currency, "quoted"), currency)}</strong></div>}
-          </div>
-        </div> : itemized ? <div className="annual-columns">
-          <div className="annual-column">
-            <h5>Cobro real al cliente</h5>
+          </> : itemized ? <>
+            <div className="annual-total"><span>Total recibido del cliente</span><strong>{amount(chargeTotal(charge, "charged"), currency)}</strong></div>
+            {charge?.charged_on && <small className="annual-date">Recibido el {prettyDate(charge.charged_on)}</small>}
             {included.map((service) => <div className="annual-service-line" key={service}>
               <span>{serviceNames[service]} cobrado al cliente</span>
               <strong>{amount(charge?.[`charged_${service}`], currency)}</strong>
-              {service !== "support" && <small>Pagado al proveedor: {providerMoney(costs, service, false)}</small>}
+              {service !== "support" && <small>Pagado al proveedor: {groupedMoney(costs.filter(({ renewal }) => renewal.kind === service).flatMap(({ history }) => history.map((payment) => ({ amount: Number(payment.provider_cost), currency: payment.currency }))))}</small>}
             </div>)}
-            <div className="annual-total"><span>Total recibido del cliente</span><strong>{amount(chargeTotal(charge, "charged"), currency)}</strong></div>
-            {charge?.charged_on && <small className="annual-date">Recibido el {prettyDate(charge.charged_on)}</small>}
-          </div>
-          <div className="annual-column">
-            <h5>Presupuesto para el cliente</h5>
-            {included.map((service) => <div className="annual-service-line" key={service}>
-              <span>{serviceNames[service]} presupuestado al cliente</span>
-              <strong>{amount(charge?.[`quoted_${service}`], currency)}</strong>
-              {service !== "support" && <small>Costo estimado del proveedor: {providerMoney(costs, service, true)}</small>}
-            </div>)}
-            <div className="annual-total"><span>Total presupuestado al cliente</span><strong>{amount(chargeTotal(charge, "quoted"), currency)}</strong></div>
-          </div>
-        </div> : <div className="annual-columns">
-          <div className="annual-column">
-            <h5>Cobro real al cliente</h5>
+          </> : <>
             <div className="annual-total"><span>Total recibido del cliente</span><strong>{amount(charge?.charged_total, currency)}</strong></div>
+            {charge?.charged_on && <small className="annual-date">Recibido el {prettyDate(charge.charged_on)}</small>}
             {costs.map(({ renewal, history }) => <div className="annual-cost" key={renewal.id}><span>Pagado al proveedor de {renewal.label}</span><strong>{groupedMoney(history.map((payment) => ({ amount: Number(payment.provider_cost), currency: payment.currency })))}</strong></div>)}
-          </div>
-          <div className="annual-column">
-            <h5>Presupuesto para el cliente</h5>
-            <div className="annual-total"><span>Total presupuestado al cliente</span><strong>{amount(charge?.quoted_total, currency)}</strong></div>
-            {costs.map(({ renewal, estimatedCost, estimatedCurrency }) => <div className="annual-cost" key={renewal.id}><span>Costo estimado del proveedor de {renewal.label}</span><strong>{estimatedCost === null ? "Sin registrar" : money(Number(estimatedCost), estimatedCurrency)}</strong></div>)}
-          </div>
-        </div>}
-        {charge && !automatic && <p className="annual-note">Registro del formulario anterior. Sus totales se conservaron; puedes editarlo para calcular automáticamente el soporte a partir de los costos del proveedor.</p>}
+          </>}
+        </div>
+        {charge && !automatic && <p className="annual-note">Registro del formulario anterior. Sus datos se conservaron; puedes editarlo para calcular el soporte a partir de los costos pagados al proveedor.</p>}
         {charge?.notes && <p className="annual-note">{charge.notes}</p>}
       </div>;
     })}

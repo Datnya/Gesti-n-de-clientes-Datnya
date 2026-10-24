@@ -1002,7 +1002,6 @@ nav {
 .annual-year-title { align-items: center; padding-bottom: 12px; }
 .annual-year-title strong { color: #ff9b45; font-size: 16px; }
 .annual-year-title span { color: #c4c9cc; font-size: 10px; margin-left: 7px; }
-.annual-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .annual-column { min-width: 0; background: #202226; border-radius: 8px; padding: 11px; }
 .annual-column h5 { margin: 0 0 10px; font-size: 10px; color: #ff9b45; }
 .annual-total, .annual-cost, .annual-support { display: grid; gap: 4px; margin-bottom: 10px; }
@@ -1741,7 +1740,7 @@ nav {
 .billing-service h4 { font-size: 13px; color: #ff9b45; margin: 0 0 12px; }
 .billing-service p { color: #c4c9cc; font-size: 10px; line-height: 1.5; margin: 0 0 13px; }
 .billing-service p strong { color: #fff; }
-.billing-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
+.billing-totals { display: grid; gap: 10px; margin: 14px 0; }
 .billing-totals > div { display: grid; gap: 5px; padding: 12px; background: #25272a; border-radius: 9px; }
 .billing-totals span { color: #c4c9cc; font-size: 10px; }
 .billing-totals strong { color: #ff9b45; font-size: 13px; }
@@ -2206,8 +2205,6 @@ nav {
     grid-template-columns: 1fr;
     gap: 0;
   }
-  .billing-totals { grid-template-columns: 1fr; }
-  .annual-columns { grid-template-columns: 1fr; }
   .annual-ledger-head { flex-wrap: wrap; }
   .modal-header {
     padding: 20px 20px 15px;

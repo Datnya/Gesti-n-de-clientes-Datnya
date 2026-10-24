@@ -235,30 +235,6 @@ const demoData: Data = {
       notes: "Primer año con precios promocionales.",
       created_at: today(),
     },
-    {
-      id: "annual-demo-2",
-      owner_id: demoOwner,
-      client_id: "demo-1",
-      billing_year: parseDay(today()).getFullYear(),
-      currency: "PEN",
-      quoted_total: 500,
-      charged_total: null,
-      quoted_hosting: 280,
-      quoted_domain: 65,
-      quoted_support: 155,
-      charged_hosting: null,
-      charged_domain: null,
-      charged_support: null,
-      cost_breakdown: {
-        version: 2,
-        hosting: { currency: "PEN", estimated: 280, paid: null, estimated_client_currency: null, paid_client_currency: null },
-        domain: { currency: "PEN", estimated: 65, paid: null, estimated_client_currency: null, paid_client_currency: null },
-        support: true,
-      },
-      charged_on: null,
-      notes: "Cotización aproximada para la renovación.",
-      created_at: today(),
-    },
   ],
   credentials: [
     {
@@ -979,25 +955,22 @@ export default function App() {
         const raw = fromForm(form, name);
         return raw === "" ? null : Number(raw);
       };
-      const quotedTotal = inputAmount("quoted_total");
       const chargedTotal = inputAmount("charged_total");
-      if (quotedTotal === null && chargedTotal === null) {
-        setToast("Ingresa el total presupuestado o el total que te pagó el cliente.");
-        return;
-      }
-      if (fromForm(form, "charged_on") && chargedTotal === null) {
-        setToast("Para registrar la fecha, indica el total que recibiste del cliente.");
+      if (chargedTotal === null) {
+        setToast("Ingresa el total que te pagó el cliente.");
         return;
       }
       const clientCurrency = fromForm(form, "currency") as Currency;
       const providerCost = (service: "hosting" | "domain"): AnnualProviderCost | null => {
         if (!selected.includes(service)) return null;
         const providerCurrency = fromForm(form, `${service}_currency`) as Currency;
+        const previous = (editor.item as AnnualBilling | undefined)?.cost_breakdown?.[service];
+        const keepPreviousEstimate = previous?.currency === providerCurrency;
         return {
           currency: providerCurrency,
-          estimated: inputAmount(`${service}_estimated`),
+          estimated: keepPreviousEstimate ? previous.estimated : null,
           paid: inputAmount(`${service}_paid`),
-          estimated_client_currency: providerCurrency === clientCurrency ? null : inputAmount(`${service}_estimated_client_currency`),
+          estimated_client_currency: keepPreviousEstimate ? previous.estimated_client_currency : null,
           paid_client_currency: providerCurrency === clientCurrency ? null : inputAmount(`${service}_paid_client_currency`),
         };
       };
@@ -1010,8 +983,7 @@ export default function App() {
       for (const service of ["hosting", "domain"] as const) {
         const cost = breakdown[service];
         if (!cost || cost.currency === clientCurrency) continue;
-        if (cost.estimated_client_currency !== null && cost.estimated === null ||
-            cost.paid_client_currency !== null && cost.paid === null) {
+        if (cost.paid_client_currency !== null && cost.paid === null) {
           setToast(`En ${service === "hosting" ? "hosting" : "dominio"}, ingresa el costo original antes de su equivalente en ${clientCurrency}.`);
           return;
         }
@@ -1020,7 +992,6 @@ export default function App() {
         client_id: editor.clientId ?? (editor.item as AnnualBilling).client_id,
         billing_year: year,
         currency: clientCurrency,
-        quoted_total: quotedTotal,
         charged_total: chargedTotal,
         cost_breakdown: breakdown,
         charged_on: optional(fromForm(form, "charged_on")),
@@ -2973,17 +2944,13 @@ function PaymentFields({ renewal, historical }: { renewal: Renewal; historical: 
 }
 type ProviderCostDraft = {
   currency: Currency;
-  estimated: string;
   paid: string;
-  estimated_client_currency: string;
   paid_client_currency: string;
 };
 function providerCostDraft(cost: AnnualProviderCost | null | undefined, currency: Currency): ProviderCostDraft {
   return {
     currency: cost?.currency ?? currency,
-    estimated: cost?.estimated == null ? "" : String(cost.estimated),
     paid: cost?.paid == null ? "" : String(cost.paid),
-    estimated_client_currency: cost?.estimated_client_currency == null ? "" : String(cost.estimated_client_currency),
     paid_client_currency: cost?.paid_client_currency == null ? "" : String(cost.paid_client_currency),
   };
 }
@@ -2995,10 +2962,7 @@ function AnnualBillingFields({ item, year, renewals, payments }: {
 }) {
   const [activeYear, setActiveYear] = useState(item?.billing_year ?? year);
   const [currency, setCurrency] = useState<Currency>(item?.currency ?? "PEN");
-  const [totals, setTotals] = useState({
-    quoted: item?.quoted_total == null ? "" : String(item.quoted_total),
-    charged: item?.charged_total == null ? "" : String(item.charged_total),
-  });
+  const [receivedTotal, setReceivedTotal] = useState(item?.charged_total == null ? "" : String(item.charged_total));
   const [selected, setSelected] = useState<Record<BillingService, boolean>>(() => Object.fromEntries(
     billingServices.map((service) => [service,
       item?.cost_breakdown?.version === 2
@@ -3017,22 +2981,21 @@ function AnnualBillingFields({ item, year, renewals, payments }: {
   const toCost = (service: "hosting" | "domain"): AnnualProviderCost | null => {
     if (!selected[service]) return null;
     const draft = providerDrafts[service];
+    const previous = item?.cost_breakdown?.[service];
+    const keepPreviousEstimate = previous?.currency === draft.currency;
     return {
       currency: draft.currency,
-      estimated: toAmount(draft.estimated),
+      estimated: keepPreviousEstimate ? previous.estimated : null,
       paid: toAmount(draft.paid),
-      estimated_client_currency: toAmount(draft.estimated_client_currency),
+      estimated_client_currency: keepPreviousEstimate ? previous.estimated_client_currency : null,
       paid_client_currency: toAmount(draft.paid_client_currency),
     };
   };
   const breakdown: AnnualCostBreakdown = { version: 2, hosting: toCost("hosting"), domain: toCost("domain"), support: selected.support };
-  const quotedSupport = calculateSupport(toAmount(totals.quoted), breakdown, currency, "quoted");
-  const chargedSupport = calculateSupport(toAmount(totals.charged), breakdown, currency, "charged");
-  const providerSummary = (service: BillingService, estimated: boolean) => {
-    const amounts = costs.filter(({ renewal }) => renewal.kind === service).flatMap(({ history, estimatedCost, estimatedCurrency }) =>
-      estimated
-        ? estimatedCost === null ? [] : [{ amount: Number(estimatedCost), currency: estimatedCurrency }]
-        : history.map((payment) => ({ amount: Number(payment.provider_cost), currency: payment.currency })),
+  const chargedSupport = calculateSupport(toAmount(receivedTotal), breakdown, currency, "charged");
+  const providerSummary = (service: BillingService) => {
+    const amounts = costs.filter(({ renewal }) => renewal.kind === service).flatMap(({ history }) =>
+      history.map((payment) => ({ amount: Number(payment.provider_cost), currency: payment.currency })),
     );
     if (!amounts.length) return "Sin registrar";
     const byCurrency = new Map<Currency, number>();
@@ -3040,23 +3003,22 @@ function AnnualBillingFields({ item, year, renewals, payments }: {
       byCurrency.set(providerCurrency, (byCurrency.get(providerCurrency) ?? 0) + amount));
     return [...byCurrency].map(([providerCurrency, amount]) => money(amount, providerCurrency)).join(" · ");
   };
-  const supportText = (result: typeof quotedSupport, mode: "quoted" | "charged") => {
+  const supportText = (result: typeof chargedSupport) => {
     if (result.status === "ready") return money(result.amount, currency);
-    if (result.status === "missing_total") return mode === "quoted" ? "Ingresa el total presupuestado" : "Ingresa el total recibido";
+    if (result.status === "missing_total") return "Ingresa el total recibido";
     if (result.status === "missing_equivalent") return `Ingresa el equivalente en ${currency} de ${result.service === "hosting" ? "hosting" : "dominio"}`;
-    if (result.status === "missing_cost") return `Ingresa el costo ${mode === "quoted" ? "estimado" : "real"} de ${result.service === "hosting" ? "hosting" : "dominio"}`;
+    if (result.status === "missing_cost") return `Ingresa el costo pagado de ${result.service === "hosting" ? "hosting" : "dominio"}`;
     return "No incluido";
   };
   const names: Record<BillingService, string> = { hosting: "Hosting", domain: "Dominio", support: "Soporte anual" };
   return <>
-    <p className="form-hint">Ingresa el total del cliente y cuánto te cobra cada proveedor. Si incluyes soporte, se calcula como total menos costos de hosting y dominio. Este balance no crea pagos ni cambia vencimientos.</p>
+    <p className="form-hint">Ingresa el total recibido del cliente y cuánto pagaste a cada proveedor. Si incluyes soporte, se calcula como total menos costos de hosting y dominio. Este balance no crea pagos ni cambia vencimientos.</p>
     {item && !item.cost_breakdown &&
       <p className="form-hint">Este registro se creó con el formulario anterior. Sus totales se conservaron. Revisa los costos del proveedor antes de guardar el nuevo cálculo; los antiguos importes por servicio eran cobros al cliente, no costos del proveedor.</p>}
     <div className="form-grid">
       <label className="field"><span>Año del servicio <b>*</b></span><input name="billing_year" type="number" value={activeYear} onChange={(event) => setActiveYear(Number(event.target.value))} min={2000} max={2100} required /></label>
       <label className="field"><span>Moneda en que paga el cliente</span><select name="currency" value={currency} onChange={(event) => setCurrency(event.target.value as Currency)}><option value="PEN">Soles (PEN)</option><option value="USD">Dólares (USD)</option></select></label>
-      <label className="field"><span>Total presupuestado al cliente</span><input name="quoted_total" type="number" min={0} step="0.01" value={totals.quoted} onChange={(event) => setTotals((current) => ({ ...current, quoted: event.target.value }))} placeholder="Ejemplo: 230.00" /></label>
-      <label className="field"><span>Total que recibiste del cliente</span><input name="charged_total" type="number" min={0} step="0.01" value={totals.charged} onChange={(event) => setTotals((current) => ({ ...current, charged: event.target.value }))} placeholder="Ejemplo: 230.00" /></label>
+      <label className="field"><span>Total que recibiste del cliente <b>*</b></span><input name="charged_total" type="number" min={0} step="0.01" value={receivedTotal} onChange={(event) => setReceivedTotal(event.target.value)} placeholder="Ejemplo: 230.00" required /></label>
     </div>
     <div className="billing-pick">
       <strong>¿Qué servicios incluye este total?</strong>
@@ -3067,20 +3029,18 @@ function AnnualBillingFields({ item, year, renewals, payments }: {
       <div className="form-grid">
         <label className="field"><span>Moneda del proveedor</span><select name={`${service}_currency`} value={providerDrafts[service].currency} onChange={(event) => setProviderDrafts((current) => ({ ...current, [service]: { ...current[service], currency: event.target.value as Currency } }))}><option value="PEN">Soles (PEN)</option><option value="USD">Dólares (USD)</option></select></label>
         <span aria-hidden="true" />
-        {(["estimated", "paid"] as const).map((mode) => <label className="field" key={mode}>
-          <span>{mode === "estimated" ? "Costo estimado que te cobra el proveedor" : "Costo real que pagaste al proveedor"}</span>
-          <input name={`${service}_${mode}`} type="number" min={0} step="0.01" value={providerDrafts[service][mode]} onChange={(event) => setProviderDrafts((current) => ({ ...current, [service]: { ...current[service], [mode]: event.target.value } }))} placeholder="0.00" />
-        </label>)}
-        {providerDrafts[service].currency !== currency && (["estimated_client_currency", "paid_client_currency"] as const).map((mode) => <label className="field" key={mode}>
-          <span>{mode === "estimated_client_currency" ? `Costo estimado equivalente en ${currency}` : `Costo real equivalente en ${currency}`}</span>
-          <input name={`${service}_${mode}`} type="number" min={0} step="0.01" value={providerDrafts[service][mode]} onChange={(event) => setProviderDrafts((current) => ({ ...current, [service]: { ...current[service], [mode]: event.target.value } }))} placeholder="0.00" />
-        </label>)}
+        <label className="field"><span>Costo que pagaste al proveedor</span>
+          <input name={`${service}_paid`} type="number" min={0} step="0.01" value={providerDrafts[service].paid} onChange={(event) => setProviderDrafts((current) => ({ ...current, [service]: { ...current[service], paid: event.target.value } }))} placeholder="0.00" />
+        </label>
+        {providerDrafts[service].currency !== currency && <label className="field">
+          <span>Costo pagado equivalente en {currency}</span>
+          <input name={`${service}_paid_client_currency`} type="number" min={0} step="0.01" value={providerDrafts[service].paid_client_currency} onChange={(event) => setProviderDrafts((current) => ({ ...current, [service]: { ...current[service], paid_client_currency: event.target.value } }))} placeholder="0.00" />
+        </label>}
       </div>
-      <p>En el historial del servicio · estimado: <strong>{providerSummary(service, true)}</strong> · pagado: <strong>{providerSummary(service, false)}</strong>.</p>
+      <p>Pagado en el historial del servicio: <strong>{providerSummary(service)}</strong>.</p>
     </div>)}
     {selected.support && <div className="billing-totals">
-      <div><span>Soporte estimado (se calcula automáticamente)</span><strong>{supportText(quotedSupport, "quoted")}</strong></div>
-      <div><span>Soporte real (se calcula automáticamente)</span><strong>{supportText(chargedSupport, "charged")}</strong></div>
+      <div><span>Tu ingreso por soporte (se calcula automáticamente)</span><strong>{supportText(chargedSupport)}</strong></div>
     </div>}
     <Field label="Fecha en que recibiste el pago del cliente" name="charged_on" type="date" defaultValue={item?.charged_on} />
     <Notes value={item?.notes} />

@@ -5,7 +5,20 @@ let confirmedGift = '';
 function giftMessage() {
   return giftSettings.enabled && confirmedGift ? '🎁 *Mi regalo:* '+confirmedGift+'.' : '';
 }
-if (giftSettings.enabled) {
+if (inv.templateId === 'hello-kitty') {
+  const panel = document.getElementById('gifts');
+  const card = panel.querySelector('.gift-card');
+  const list = document.createElement('ul');
+  list.className = 'wish-list';
+  for (const [name] of inv.gifts) {
+    const item = document.createElement('li');
+    item.textContent = name;
+    list.append(item);
+  }
+  card.replaceChildren(list);
+  panel.querySelector('h2 + p').textContent = 'Estos son algunos regalos que me harían ilusión.';
+  panel.hidden = !inv.sections.gifts || !inv.gifts.length;
+} else if (giftSettings.enabled) {
   const panel = document.getElementById('gifts');
   const dialog = document.getElementById('giftDialog');
   const choices = document.getElementById('giftChoices');
@@ -80,4 +93,5 @@ if (giftSettings.enabled) {
     clear.hidden = true;
   };
 }
+
 

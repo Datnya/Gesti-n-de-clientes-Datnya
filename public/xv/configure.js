@@ -4,6 +4,22 @@ const select = selector => document.querySelector(selector);
 const setText = (selector,value) => {select(selector).textContent=value};
 document.title=inv.name+' · Mis quince años';
 setText('h1',inv.name);
+if(inv.templateId==='hello-kitty'){
+  document.title=inv.name+' · Mi cumpleaños';
+  const guest=select('#guest');
+  guest.parentElement.firstChild.textContent='Nombre de la niña o del niño que asistirá';
+  guest.autocomplete='off';
+  select('#total').remove();
+  inv.sections.family=false;
+  inv.sections.album=false;
+  inv.sections.attire=false;
+  setText('.cover .small','Mi fiesta de cumpleaños');
+  setText('.paper span',inv.age?'¡Cumplo '+inv.age+' '+(inv.age==='1'?'año':'años')+'!':'¡Te invito!');
+  setText('#heading','¡Vamos a celebrar!');
+  setText('.family h2','Mi familia te invita');
+  setText('.farewell h2','te espero en mi fiesta');
+  select('.farewell em').remove();
+}
 if(inv.templateId==='azul-acuarela'){
   const label=select('.cover .small');
   const number=document.createElement('b');
@@ -19,6 +35,7 @@ if(inv.templateId==='azul-acuarela'){
 }
 
 for(const signature of document.querySelectorAll('.notepaper em,.farewell em')) signature.textContent='Con cariño, '+inv.name;
+select('.player').after(select('.event-date'));
 const date=new Date(inv.event+'-05:00');
 function format(options){return new Intl.DateTimeFormat('es-PE',{timeZone:'America/Lima',...options}).format(date)}
 select('.event-date').lastChild.textContent=format({weekday:'long',day:'numeric',month:'long'});
@@ -60,6 +77,11 @@ select('.album').hidden=!inv.sections.album||!inv.album.length;
 select('.pages').hidden=inv.album.length<=2;
 if(!inv.sections.cover)select('#letter').hidden=false;
 }
+
+
+
+
+
 
 
 

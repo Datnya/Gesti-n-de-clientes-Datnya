@@ -3,3 +3,4 @@
 .inv-template-picker button{display:inline-grid;margin:0 10px 10px 0}.inv-template-picker button[data-template="princesa-lila"]{background:url(/lila/princesa.webp) calc(100% - 5px) center/auto 94% no-repeat,linear-gradient(120deg,#f4eafb,#e4d3ed);padding-right:90px;color:#4d2964;border-color:#a486ad}
 .inv-sample-card{display:inline-grid;gap:6px;margin:0 14px 14px 0}.inv-sample-card>button{margin:0}.inv-sample-card>div{display:flex;align-items:center;justify-content:space-between;gap:10px}.inv-sample-card>div button{display:inline-block;min-width:0;margin:0;padding:6px 10px;background:white;font:inherit}
 .inv-template-picker button[data-template="azul-acuarela"]{background:linear-gradient(90deg,#fff9,#fff2),url(/azul/papel.webp) center/cover;color:#174b77;border-color:#93b4ce}
+.inv-template-picker button[data-template="hello-kitty"]{padding-right:85px;color:#8c2059;background:url(/kitty/saludo.png) right center/75px auto no-repeat,#ffdeee;border-color:#df8fb2}

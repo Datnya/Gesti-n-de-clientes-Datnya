@@ -2,7 +2,7 @@ import {supabase} from "../lib/supabase";
 
 export const sections = {cover:"Sobre",intro:"Fecha",music:"Reproductor",count:"Cuenta regresiva",letter:"Carta",family:"Familia",parents:"Padres",sponsors:"Padrinos",location:"Ubicación",attire:"Vestimenta",album:"Álbum",gifts:"Regalos",rsvp:"Asistencia",farewell:"Despedida"};
 export const initial = {
-  templateId:"rosa-pastel",
+  templateId:"rosa-pastel", age:"",
   name:"",event:"",phone:"",letter:"",parents:"",sponsors:"",venue:"",address:"",maps:"",embed:"",
   dress:"Sport elegante",woman:"Vestido midi y tacón bajo",man:"Blazer y camisa sin corbata",color:"rosa pastel",
   song:"",looks:["",""],album:[] as string[],gifts:[] as string[][],qr:"",
@@ -10,7 +10,7 @@ export const initial = {
 };
 export type Content = typeof initial;
 export interface Entry {id:string;client_id:string;title:string;active:boolean;expires_at:string;payload:Content}
-export type Summary = Omit<Entry,"payload">;
+export type Summary = Omit<Entry,"payload"> & {templateId:string|null};
 async function local<T>(mode:IDBTransactionMode, operation:(s:IDBObjectStore)=>IDBRequest<T>):Promise<T>{
   return new Promise((resolve,reject)=>{
     const db=indexedDB.open("datnya-invitaciones",1);
@@ -25,8 +25,8 @@ async function local<T>(mode:IDBTransactionMode, operation:(s:IDBObjectStore)=>I
   });
 }
 export async function listEntries():Promise<Summary[]>{
-  if(!supabase)return local("readonly",s=>s.getAll());
-  const {data,error}=await supabase.from("invitations").select("id,client_id,title,active,expires_at").order("title");
+  if(!supabase){const entries=await local<Entry[]>("readonly",s=>s.getAll());return entries.map(({payload,...row})=>({...row,templateId:payload.templateId||null}))}
+  const {data,error}=await supabase.from("invitations").select("id,client_id,title,active,expires_at,templateId:payload->>templateId").order("title");
   if(error)throw error; return data;
 }
 export async function getEntry(id:string):Promise<Entry>{
@@ -59,3 +59,5 @@ export async function publicContent(id:string):Promise<Content|null>{
   const {data,error}=await supabase.rpc("open_invitation",{invite_id:id});
   if(error)throw error;return data;
 }
+
+

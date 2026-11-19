@@ -54,7 +54,7 @@ document.addEventListener('visibilitychange',syncFlowers);
 byId('close').onclick = () => byId('viewer').close();
 const total = byId('total');
 const others = byId('others');
-total.onchange = event => {
+if(total) total.onchange = event => {
   const count = Number(event.target.value);
   while (others.children.length >= count) others.lastChild.remove();
   while (others.children.length < count-1) {
@@ -78,7 +78,7 @@ document.querySelector('form').onsubmit = e => {
     }
   }
   const names = fields.map(field => field.value.trim());
-  const message = [
+  const message = inv.templateId==="hello-kitty" ? `¡Hola! Confirmo que ${names[0]} asistirá al cumpleaños de ${inv.name}. ¡Gracias por la invitación!` : [
     `¡Hola! Soy ${names[0]} y confirmo mi asistencia a los XV de ${inv.name}.`,
     `*Total de asistentes:* ${names.length}.\n*Asistentes:* ${names.join(', ')}.`,
     giftMessage(),
@@ -156,6 +156,8 @@ if ('IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: re
     observer.observe(item);
   }
 }
+
+
 
 
 

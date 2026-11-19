@@ -2,7 +2,8 @@ import {initial, type Content} from "./store";
 import {templates} from "./templates";
 
 export function sampleContent(path:string):Content|null {
-  const design=templates.find(t=>path.replace(/\/$/,"")==="/muestra/"+t.id);
+  const route=path.replace(/\/$/,"");
+  const design=templates.find(t=>route===t.path || route==="/muestra/"+t.id);
   if(!design)return null;
   return {
     ...initial, templateId:design.id, name:"Camila", color:design.color,
@@ -25,3 +26,4 @@ export function sampleContent(path:string):Content|null {
     qr:"yapedemo.webp"
   };
 }
+

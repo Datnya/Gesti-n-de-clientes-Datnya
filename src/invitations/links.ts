@@ -25,3 +25,7 @@ export function invitationId(path:string){
   const bytes=atob(match[1].replaceAll("-","+").replaceAll("_","/")+"==");
   return uuid(prefix+Array.from(bytes,c=>c.charCodeAt(0).toString(16).padStart(2,"0")).join(""));
 }
+
+export function publicLink(path:string) {
+  return new URL(path, import.meta.env.PROD ? "https://tusxv.vercel.app" : location.origin).href;
+}

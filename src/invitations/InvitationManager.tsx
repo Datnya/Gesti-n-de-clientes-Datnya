@@ -86,7 +86,7 @@ export function InvitationManager({clients}:{clients:Client[]}){
     {!configured&&<p>Prueba local. Los borradores se guardan en este navegador. Guarda desde localhost para probar un enlace activo en el celular por Wi-Fi.</p>}
     <details open><summary>Invitaciones guardadas ({rows.length})</summary>{rows.map(row=><div className="inv-row" key={row.id}><strong>{row.title}</strong><span>{clients.find(c=>c.id===row.client_id)?.company_name}</span><button disabled={busy} onClick={()=>edit(row.id)}>Editar</button>{row.active&&Date.parse(row.expires_at)>Date.now()&&<><a href={invitationPath(row.id,row.title)} target="_blank" rel="noreferrer">Abrir enlace</a><button type="button" onClick={async()=>{try{await navigator.clipboard.writeText(location.origin+invitationPath(row.id,row.title));setNotice("Enlace copiado.")}catch{setNotice("Usa Abrir enlace y copia la dirección desde el navegador.")}}}>Copiar enlace</button></>}</div>)}</details>
     <button type="button" disabled={busy} onClick={reset}>Nueva invitación</button>
-    {!chosen ? <fieldset className="inv-template-picker"><legend>Selecciona una plantilla</legend>{templates.map(t=><button key={t.id} type="button" disabled={busy} onClick={()=>{update("templateId",t.id);setChosen(true)}}><strong>{t.name}</strong><span>Elegir plantilla</span></button>)}</fieldset> :
+    {!chosen ? <fieldset className="inv-template-picker"><legend>Selecciona una plantilla</legend>{templates.map(t=><div key={t.id} className="inv-sample-card"><button data-template={t.id} type="button" disabled={busy} onClick={()=>{setData(prev=>({...prev,templateId:t.id,color:prev.color===invitationTemplate(prev.templateId)?.color?t.color:prev.color}));setChosen(true)}}><strong>{t.name}</strong><span>Elegir plantilla</span></button><div><a href={"/muestra/"+t.id} target="_blank" rel="noreferrer">Ver muestra</a><button type="button" onClick={async()=>{try{await navigator.clipboard.writeText(location.origin+"/muestra/"+t.id);setNotice("Enlace de "+t.name+" copiado.")}catch{setNotice("Abre la muestra y copia la dirección del navegador.")}}}>Copiar enlace</button></div></div>)}</fieldset> :
     <form onSubmit={submit}><p>Plantilla: <strong>{invitationTemplate(data.templateId)?.name}</strong> <button type="button" disabled={busy} onClick={()=>setChosen(false)}>Cambiar plantilla</button></p><fieldset disabled={busy}><legend>Cliente y evento</legend><label>Cliente<select value={client} onChange={e=>setClient(e.target.value)}><option value="">Selecciona un cliente</option>{clients.map(c=><option key={c.id} value={c.id}>{c.company_name}</option>)}</select></label>
     {field("name","Nombre de la quinceañera")}{field("event","Fecha y hora del evento · Lima","datetime-local")}
     <label>Cierre de la invitación · Lima<input type="datetime-local" value={end} onChange={e=>setEnd(e.target.value)}/></label>{field("phone","WhatsApp con código de país","tel")}
@@ -101,6 +101,8 @@ export function InvitationManager({clients}:{clients:Client[]}){
     {preview&&<div className="inv-overlay" role="dialog" aria-modal="true" aria-label="Vista previa móvil"><button onClick={()=>setPreview(false)}>Cerrar vista previa</button><div><InvitationFrame content={data}/></div></div>}
     </section>;
 }
+
+
 
 
 

@@ -8,7 +8,9 @@ byId('open').addEventListener('click', async () => {
     await Promise.allSettled(paper.getAnimations().map(animation => animation.finished));
   }
   byId('letter').hidden = false;
-  byId('heading').focus({preventScroll:true});
+  const heading = byId('heading');
+  if (heading.getClientRects().length) heading.focus({preventScroll:true});
+  else { byId('letter').tabIndex = -1; byId('letter').focus({preventScroll:true}); }
   byId('letter').scrollIntoView({behavior:reduced ? 'instant' : 'smooth'});
 },{once:true});
 const song = byId('song');

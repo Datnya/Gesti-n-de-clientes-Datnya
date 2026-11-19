@@ -1,3 +1,4 @@
+import {InvitationManager} from "./invitations/InvitationManager";
 import {
   useEffect,
   useMemo,
@@ -70,7 +71,7 @@ import { AnnualLedger } from "./components/AnnualLedger";
 import { annualBreakdown, billingServices, calculateSupport, chargeTotal, itemizedCharge, type BillingService } from "./lib/annual";
 import { credentialPriority } from "./lib/credentials";
 
-type View = "overview" | "clients" | "payments" | "finances" | "calendar";
+type View = "invitations" | "overview" | "clients" | "payments" | "finances" | "calendar";
 const LOGIN_ALIAS = "datnya.monzon";
 const LOGIN_EMAIL = "datnyamonzon1@gmail.com";
 type Editor = {
@@ -295,11 +296,13 @@ const demoData: Data = {
 const nav: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "overview", label: "Resumen", icon: LayoutDashboard },
   { id: "clients", label: "Clientes", icon: UsersRound },
+  { id: "invitations", label: "Invitaciones", icon: CalendarDays },
   { id: "payments", label: "Vencimientos", icon: CreditCard },
   { id: "finances", label: "Finanzas", icon: Wallet },
   { id: "calendar", label: "Calendario", icon: CalendarDays },
 ];
 const titleByView: Record<View, string> = {
+  invitations: "Generador de invitaciones",
   overview: "Tu espacio de trabajo",
   clients: "Clientes",
   payments: "Vencimientos",
@@ -1540,6 +1543,7 @@ export default function App() {
               </section>
             </>
           )}
+          {view === "invitations" && <InvitationManager clients={data.clients} />}
           {view === "clients" && (
             <>
               <div className="page-head">
@@ -3310,3 +3314,4 @@ function MonthCalendar({
     </div>
   );
 }
+

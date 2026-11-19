@@ -1,9 +1,10 @@
+import {newId,invitationPath} from "./links";
 import {templates,invitationTemplate} from "./templates";
 import {useEffect,useState,type FormEvent} from "react";
 import {configured} from "../lib/supabase";
 import type {Client} from "../lib/types";
 import {InvitationFrame} from "./InvitationFrame";
-import {initial,sections,newId,listEntries,getEntry,saveEntry,type Content,type Summary} from "./store";
+import {initial,sections,listEntries,getEntry,saveEntry,type Content,type Summary} from "./store";
 import "./manager.css";
 
 type TextKey = {[K in keyof Content]:Content[K] extends string?K:never}[keyof Content];
@@ -83,7 +84,7 @@ export function InvitationManager({clients}:{clients:Client[]}){
   }
   return <section className="inv-manager panel"><h2>Generador de invitaciones XV</h2>
     {!configured&&<p>Prueba local. Los borradores se guardan en este navegador. Guarda desde localhost para probar un enlace activo en el celular por Wi-Fi.</p>}
-    <details open><summary>Invitaciones guardadas ({rows.length})</summary>{rows.map(row=><div className="inv-row" key={row.id}><strong>{row.title}</strong><span>{clients.find(c=>c.id===row.client_id)?.company_name}</span><button disabled={busy} onClick={()=>edit(row.id)}>Editar</button>{row.active&&Date.parse(row.expires_at)>Date.now()&&<a href={'/i/'+row.id} target="_blank" rel="noreferrer">Abrir enlace</a>}</div>)}</details>
+    <details open><summary>Invitaciones guardadas ({rows.length})</summary>{rows.map(row=><div className="inv-row" key={row.id}><strong>{row.title}</strong><span>{clients.find(c=>c.id===row.client_id)?.company_name}</span><button disabled={busy} onClick={()=>edit(row.id)}>Editar</button>{row.active&&Date.parse(row.expires_at)>Date.now()&&<><a href={invitationPath(row.id,row.title)} target="_blank" rel="noreferrer">Abrir enlace</a><button type="button" onClick={async()=>{try{await navigator.clipboard.writeText(location.origin+invitationPath(row.id,row.title));setNotice("Enlace copiado.")}catch{setNotice("Usa Abrir enlace y copia la dirección desde el navegador.")}}}>Copiar enlace</button></>}</div>)}</details>
     <button type="button" disabled={busy} onClick={reset}>Nueva invitación</button>
     {!chosen ? <fieldset className="inv-template-picker"><legend>Selecciona una plantilla</legend>{templates.map(t=><button key={t.id} type="button" disabled={busy} onClick={()=>{update("templateId",t.id);setChosen(true)}}><strong>{t.name}</strong><span>Elegir plantilla</span></button>)}</fieldset> :
     <form onSubmit={submit}><p>Plantilla: <strong>{invitationTemplate(data.templateId)?.name}</strong> <button type="button" disabled={busy} onClick={()=>setChosen(false)}>Cambiar plantilla</button></p><fieldset disabled={busy}><legend>Cliente y evento</legend><label>Cliente<select value={client} onChange={e=>setClient(e.target.value)}><option value="">Selecciona un cliente</option>{clients.map(c=><option key={c.id} value={c.id}>{c.company_name}</option>)}</select></label>
@@ -100,5 +101,6 @@ export function InvitationManager({clients}:{clients:Client[]}){
     {preview&&<div className="inv-overlay" role="dialog" aria-modal="true" aria-label="Vista previa móvil"><button onClick={()=>setPreview(false)}>Cerrar vista previa</button><div><InvitationFrame content={data}/></div></div>}
     </section>;
 }
+
 
 

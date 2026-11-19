@@ -17,7 +17,7 @@ document.fonts.load('700 40px Cormorant').then(faces => {
 }).catch(() => root.classList.add('font-unavailable')).finally(() => root.classList.add('type-ready'));
 
 const calendar = document.querySelector('.event-date i');
-if (calendar) {
+if (calendar && !(typeof inv !== 'undefined' && inv.templateId === 'azul-acuarela')) {
   const day = calendar.parentElement.textContent.match(/\b\d{1,2}\b/);
   calendar.textContent = day ? day[0] : '';
 }
@@ -47,4 +47,5 @@ for (let i=0; i<2; i++) {
 }
 document.querySelector('#open').addEventListener('click',() => requestAnimationFrame(alignFlightLayer),{once:true});
 new ResizeObserver(alignFlightLayer).observe(cover);
+
 

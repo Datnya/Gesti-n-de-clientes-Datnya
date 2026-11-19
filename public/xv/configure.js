@@ -4,7 +4,20 @@ const select = selector => document.querySelector(selector);
 const setText = (selector,value) => {select(selector).textContent=value};
 document.title=inv.name+' · Mis quince años';
 setText('h1',inv.name);
-setText('.envelope i',Array.from(inv.name)[0]);
+if(inv.templateId==='azul-acuarela'){
+  const label=select('.cover .small');
+  const number=document.createElement('b');
+  number.textContent='15';
+  label.replaceChildren('Mis ',number,' años');
+  if(inv.album[0]){
+    const photo=new Image();
+    photo.alt='';
+    photo.src=inv.album[0];
+    select('.player img').src=photo.src;
+    select('.paper').prepend(photo);
+  }
+}
+
 for(const signature of document.querySelectorAll('.notepaper em,.farewell em')) signature.textContent='Con cariño, '+inv.name;
 const date=new Date(inv.event+'-05:00');
 function format(options){return new Intl.DateTimeFormat('es-PE',{timeZone:'America/Lima',...options}).format(date)}
@@ -47,4 +60,7 @@ select('.album').hidden=!inv.sections.album||!inv.album.length;
 select('.pages').hidden=inv.album.length<=2;
 if(!inv.sections.cover)select('#letter').hidden=false;
 }
+
+
+
 

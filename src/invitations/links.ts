@@ -15,13 +15,13 @@ export function invitationPath(id:string,name:string){
   const slug=name.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").slice(0,32).replace(/^-+|-+$/g,"")||"fiesta";
   const bytes=hex.slice(prefix.length).match(/../g)!.map(s=>parseInt(s,16));
   const token=btoa(String.fromCharCode(...bytes)).replaceAll("+","-").replaceAll("/","_").replace(/=+$/,"");
-  return route+slug+"-"+token;
+  return "/"+slug+"-"+token;
 }
 export function invitationId(path:string){
   if(path.startsWith("/i/"))return path.slice(3);
-  if(!path.startsWith(route))return null;
-  const match=/^[a-z0-9-]+-([A-Za-z0-9_-]{14})$/.exec(path.slice(route.length).replace(/\/$/,""));
-  if(!match)return "";
+  const readable=path.startsWith(route)?path.slice(route.length):path.slice(1);
+  const match=/^[a-z0-9-]+-([A-Za-z0-9_-]{14})$/.exec(readable.replace(/\/$/,""));
+  if(!match)return path.startsWith(route)?"":null;
   const bytes=atob(match[1].replaceAll("-","+").replaceAll("_","/")+"==");
   return uuid(prefix+Array.from(bytes,c=>c.charCodeAt(0).toString(16).padStart(2,"0")).join(""));
 }
@@ -29,3 +29,4 @@ export function invitationId(path:string){
 export function publicLink(path:string) {
   return new URL(path, import.meta.env.PROD ? "https://tusxv.vercel.app" : location.origin).href;
 }
+

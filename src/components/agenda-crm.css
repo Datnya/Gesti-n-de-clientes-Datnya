@@ -1,0 +1,8 @@
+.prospect-panel, .agenda-details { padding: 1.25rem; }
+.prospect-panel { margin-bottom: 1rem; }
+.prospect-stages { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%, 12rem),1fr)); gap: 1rem; }
+.agenda-details article { padding: 1rem 0; border-top: 1px solid #ddd; }
+.agenda-details p { white-space: pre-wrap; overflow-wrap: anywhere; }
+button.agenda-row { width: 100%; text-align: left; background: transparent; color: inherit; cursor: pointer; }
+.agenda-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+

@@ -1,4 +1,6 @@
 import {InvitationManager} from "./invitations/InvitationManager";
+import { Prospects } from "./components/Prospects";
+import "./components/agenda-crm.css";
 import {
   useEffect,
   useMemo,
@@ -31,7 +33,6 @@ import {
   LockKeyhole,
   LogOut,
   Menu,
-  MoreHorizontal,
   Pencil,
   ImagePlus,
   Plus,
@@ -404,6 +405,7 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth());
+  const [agenda, setAgenda] = useState<{date: string; eventId?: string} | null>(null);
   const [calendarMode, setCalendarMode] = useState<"month" | "year">("month");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState("");
@@ -433,6 +435,7 @@ export default function App() {
           setRevealed({});
           setAvatar(null);
           setProfileOpen(false);
+          setAgenda(null);
           setSelectedClientId(null);
           setEditor(null);
         }
@@ -1561,6 +1564,7 @@ export default function App() {
                   <Plus size={17} /> Nuevo cliente
                 </button>
               </div>
+              <Prospects key={session?.user.id ?? "preview"} owner={session?.user.id} />
               <div className="clients-layout">
                 <section className="panel client-list-panel">
                   <div className="list-toolbar">
@@ -2349,12 +2353,7 @@ export default function App() {
                       year={year}
                       month={month}
                       data={data}
-                      onDay={(date) =>
-                        setEditor({
-                          kind: "event",
-                          item: { event_date: date } as CalendarEvent,
-                        })
-                      }
+                      onDay={(date) => setAgenda({date})}
                     />
                   ) : (
                     <div className="year-grid">
@@ -2420,7 +2419,7 @@ export default function App() {
                     .sort((a, b) => a.date.localeCompare(b.date))
                     .slice(0, 8)
                     .map((item) => (
-                      <div className="agenda-row" key={item.id}>
+                      <button className="agenda-row" key={item.id} onClick={() => setAgenda({date: item.date, eventId: item.type === "event" ? item.original.id : undefined})}>
                         <div className="agenda-date">
                           <strong>{parseDay(item.date).getDate()}</strong>
                           <span>
@@ -2439,21 +2438,7 @@ export default function App() {
                                 ]}
                           </span>
                         </div>
-                        {item.type === "event" && (
-                          <button
-                            className="icon-button"
-                            title="Editar evento"
-                            onClick={() =>
-                              setEditor({
-                                kind: "event",
-                                item: item.original as CalendarEvent,
-                              })
-                            }
-                          >
-                            <MoreHorizontal size={18} />
-                          </button>
-                        )}
-                      </div>
+                      </button>
                     ))}
                   {!data.renewals.length && !data.events.length && (
                     <Empty
@@ -2471,9 +2456,9 @@ export default function App() {
                       <button
                         className="task-row"
                         key={event.id}
-                        onClick={() => void toggleEvent(event)}
+                        onClick={() => setAgenda({date: event.event_date, eventId: event.id})}
                       >
-                        <span className="task-check" />
+                        <CalendarDays size={16} />
                         <span>
                           {event.title}
                           <small>{prettyDate(event.event_date)}</small>
@@ -2489,6 +2474,22 @@ export default function App() {
           )}
         </div>
       </main>
+      {agenda && !editor && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setAgenda(null); }} onKeyDown={e => { if (e.key === "Escape") setAgenda(null); }}>
+        <section className="modal" role="dialog" aria-modal="true" aria-labelledby="agenda-title">
+          <div className="modal-header"><h2 id="agenda-title">{agenda.eventId ? "Detalle del evento" : "Agenda del día"}</h2><button className="button" autoFocus onClick={() => setAgenda(null)}>Cerrar</button></div>
+          <div className="agenda-details"><strong>{prettyDate(agenda.date)}</strong>
+            {data.events.filter(e => e.event_date === agenda.date && (!agenda.eventId || e.id === agenda.eventId)).map(event =>
+              <article key={event.id}><h3>{event.title}</h3><p>{eventLabel[event.kind]} · {event.completed ? "Completada" : "Pendiente"}</p>
+                <p>Vencimiento · {prettyDate(event.event_date)}</p><p>{event.notes || "Sin notas"}</p>
+                <div className="agenda-actions"><button disabled={busy} className="button" onClick={() => void toggleEvent(event)}>{event.completed ? "Marcar como pendiente" : "Marcar como completada"}</button>
+                <button className="button" onClick={() => { setAgenda(null); setEditor({kind: "event", item: event}); }}>Editar evento</button></div>
+              </article>)}
+            {!agenda.eventId && <>{data.renewals.filter(r => r.due_date === agenda.date).map(r => <article key={r.id}><h3>{r.label}</h3><p>{kindLabel[r.kind]} · {getClient(data,r.client_id)?.company_name}</p><p>{r.notes}</p></article>)}
+              {!data.events.some(e => e.event_date === agenda.date) && !data.renewals.some(r => r.due_date === agenda.date) && <p>No hay tareas ni vencimientos para este día.</p>}
+              <button className="button primary" onClick={() => { setEditor({kind: "event", item: {event_date: agenda.date} as CalendarEvent}); setAgenda(null); }}>Agregar evento para este día</button></>}
+          </div>
+        </section>
+      </div>}
       {editor && (
         <div
           className="modal-backdrop"
